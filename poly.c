@@ -8,19 +8,16 @@
 
 typedef unsigned char byte;
 typedef int fixed8_t;
-
+typedef enum { ALIAS_SKIN_SINGLE=0, ALIAS_SKIN_GROUP } aliasskintype_t;
 typedef struct mtriangle_s {
     int                 facesfront;
     int                 vertindex[3];
 } mtriangle_t;
-
 typedef struct finalvert_s {
     int     v[6];       // u, v, s, t, l, 1/z
     int     flags;
     float   reserved;
 } finalvert_t;
-
-
 typedef struct {
     void            *pdest;
     short           *pz;
@@ -28,15 +25,10 @@ typedef struct {
     byte            *ptex;
     int             sfrac, tfrac, light, zi;
 } spanpackage_t;
-
-static spanpackage_t *a_spans;
-static spanpackage_t *d_pedgespanpackage;
-typedef enum { ALIAS_SKIN_SINGLE=0, ALIAS_SKIN_GROUP } aliasskintype_t;
 typedef struct {
     aliasskintype_t     type;
     int                 skin;
 } maliasskindesc_t;
-
 typedef struct {
     void                *pskin;
     maliasskindesc_t    *pskindesc;
@@ -48,8 +40,29 @@ typedef struct {
     int                 drawtype;
     int                 seamfixupX16;
 } affinetridesc_t;
+typedef byte pixel_t;
+typedef struct {
+    int     isflattop;
+    int     numleftedges;
+    int     *pleftedgevert0;
+    int     *pleftedgevert1;
+    int     *pleftedgevert2;
+    int     numrightedges;
+    int     *prightedgevert0;
+    int     *prightedgevert1;
+    int     *prightedgevert2;
+} edgetable;
+typedef struct {
+    int     quotient;
+    int     remainder;
+} adivtab_t;
 
+/* Input params */
 static affinetridesc_t r_affinetridesc;
+/* End of input params */
+
+static spanpackage_t *a_spans;
+static spanpackage_t *d_pedgespanpackage;
 
 static byte *d_pcolormap;
 static void *acolormap;
@@ -67,7 +80,6 @@ static int d_pdestbasestep;
 static int screenwidth;
 static int d_pdestextrastep;
 static byte *d_pdest;
-typedef byte pixel_t;
 static pixel_t *d_viewbuffer;
 static short *d_pz;
 static short *d_pzbuffer;
@@ -99,17 +111,6 @@ static unsigned int d_zwidth;
 static int ubasestep;
 static int errorterm, erroradjustup, erroradjustdown;
 
-typedef struct {
-    int     isflattop;
-    int     numleftedges;
-    int     *pleftedgevert0;
-    int     *pleftedgevert1;
-    int     *pleftedgevert2;
-    int     numrightedges;
-    int     *prightedgevert0;
-    int     *prightedgevert1;
-    int     *prightedgevert2;
-} edgetable;
 static edgetable *pedgetable;
 short *zspantable[MAXHEIGHT];
 static int d_scantable[MAXHEIGHT];
@@ -128,10 +129,6 @@ static edgetable   edgetables[12] = {
     {1, 1, r_p1, r_p0, NULL, 1, r_p2, r_p0, NULL},
     {0, 1, r_p0, r_p2, NULL, 1, r_p0, r_p1, NULL},
 };
-typedef struct {
-    int     quotient;
-    int     remainder;
-} adivtab_t;
 static adivtab_t adivtab[32*32] = {
 {1, 0}, {1, -1}, {1, -2}, {1, -3}, {1, -4}, {1, -5},
 {1, -6}, {1, -7}, {2, -1}, {2, -3}, {3, 0}, {3, -3},
@@ -1122,6 +1119,28 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 
 int main()
 {
+	mtriangle_t tris[10];
+	finalvert_t verts[30];
+	int i;
+	for (i = 0; i < sizeof(tris)/sizeof(tris[0]); i++) {
+		tris[i].facesfront = 1;
+		tris[i].vertindex[0] = i + 0;
+		tris[i].vertindex[1] = i + 1;
+		tris[i].vertindex[2] = i + 2;
+	}
+	for (i = 0; i < sizeof(verts)/sizeof(verts[0]); i++) {
+		verts[i].v[0] = i;
+		verts[i].v[1] = i;
+		verts[i].v[2] = 0;
+		verts[i].v[3] = 0;
+		verts[i].v[4] = 0;
+		verts[i].v[5] = 20;
+		verts[i].flags = 0;
+		verts[i].reserved = 0;
+	}
+	r_affinetridesc.pfinalverts = verts;
+	r_affinetridesc.ptriangles = tris;
+	r_affinetridesc.numtriangles = 10;
 	D_PolysetDraw();
 	return 0;
 }
