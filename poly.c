@@ -5,6 +5,9 @@
 #define CACHE_SIZE 32
 #define ALIAS_ONSEAM 0x0020
 #define MAX_LBM_HEIGHT 480
+#define VectorCopy(a,b) \
+	((b)[0] = (a)[0], (b)[1] = (a)[1], (b)[2] = (a)[2])
+
 
 typedef unsigned char byte;
 typedef int fixed8_t;
@@ -56,6 +59,16 @@ typedef struct {
     int     quotient;
     int     remainder;
 } adivtab_t;
+
+typedef struct {
+    int     onseam;
+    int     s;
+    int     t;
+} stvert_t;
+
+typedef struct {
+    float   fv[3];      // viewspace x, y
+} auxvert_t;
 
 /* Input params */
 static affinetridesc_t r_affinetridesc;
@@ -303,6 +316,54 @@ static adivtab_t adivtab[32*32] = {
 {1, 6}, {1, 5}, {1, 4}, {1, 3}, {1, 2}, {1, 1}, {1, 0},
 };
 
+/* R_Alias symbols */
+typedef float vec_t;
+typedef vec_t vec3_t[3];
+typedef enum { ALIAS_SINGLE=0, ALIAS_GROUP } aliasframetype_t;
+typedef struct {
+    byte    v[3];
+    byte    lightnormalindex;
+} trivertx_t;
+
+typedef struct maliasframedesc_s {
+    aliasframetype_t    type;
+    trivertx_t          bboxmin;
+    trivertx_t          bboxmax;
+    int                 frame;
+    char                name[16];
+} maliasframedesc_t;
+
+typedef struct aliashdr_s {
+    int                 model;
+    int                 stverts;
+    int                 skindesc;
+    int                 triangles;
+    maliasframedesc_t   frames[1];
+} aliashdr_t;
+
+typedef struct {
+    int         ident;
+    int         version;
+    vec3_t      scale;
+    vec3_t      scale_origin;
+    float       boundingradius;
+    vec3_t      eyeposition;
+    int         numskins;
+    int         skinwidth;
+    int         skinheight;
+    int         numverts;
+    int         numtris;
+    int         numframes;
+    synctype_t  synctype;
+    int         flags;
+    float       size;
+} mdl_t;
+
+static aliashdr_t *paliashdr;
+static int r_anumverts;
+static mdl_t *pmdl;
+
+/* end of r_alias symbols */
 
 void D_PolysetRecursiveTriangle(int *lp1, int *lp2, int *lp3)
 /*
@@ -1091,7 +1152,7 @@ Referenced by D_PolysetDraw().
     }
 }
 
-void D_PolysetDraw(void)
+static void D_PolysetDraw(void)
 /*
 Definition at line 132 of file d_polyse.c.
 
@@ -1115,6 +1176,174 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
     {
         D_DrawNonSubdiv ();
     }
+}
+
+static void R_AliasPreparePoints(void)
+/*
+Definition at line 254 of file r_alias.c.
+
+References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP, ALIAS_XY_CLIP_MASK, ALIAS_Z_CLIP, refdef_t::aliasvrect, refdef_t::aliasvrectbottom, refdef_t::aliasvrectright, av, D_PolysetDraw(), fv, affinetridesc_t::numtriangles, mdl_t::numtris, mdl_t::numverts, pauxverts, affinetridesc_t::pfinalverts, pfinalverts, affinetridesc_t::ptriangles, R_AliasClipTriangle(), R_AliasProjectFinalVert(), R_AliasTransformFinalVert(), r_anumverts, r_nearclip, r_refdef, aliashdr_s::stverts, aliashdr_s::triangles, cvar_s::value, mtriangle_s::vertindex, vrect_s::x, and vrect_s::y.
+
+Referenced by R_AliasDrawModel().
+*/
+{
+    int i;
+    stvert_t *pstverts;
+    finalvert_t *fv;
+    auxvert_t *av;
+    mtriangle_t *ptri;
+    finalvert_t *pfv[3];
+
+    pstverts = (stvert_t *)((byte *)paliashdr + paliashdr->stverts);
+    r_anumverts = pmdl->numverts;
+    fv = pfinalverts;
+    av = pauxverts;
+
+    for (i = 0; i < r_anumverts; i++, fv++, av++, r_oldapverts++, r_apverts++, pstverts++) {
+        R_AliasTransformFinalVert (fv, av, r_oldapverts, r_apverts, pstverts);
+        if (av->fv[2] < r_nearclip.value) {
+            fv->flags |= ALIAS_Z_CLIP;
+        } else {
+             R_AliasProjectFinalVert (fv, av);
+
+            if (fv->v[0] < r_refdef.aliasvrect.x)
+                fv->flags |= ALIAS_LEFT_CLIP;
+            if (fv->v[1] < r_refdef.aliasvrect.y)
+                fv->flags |= ALIAS_TOP_CLIP;
+            if (fv->v[0] > r_refdef.aliasvrectright)
+                fv->flags |= ALIAS_RIGHT_CLIP;
+            if (fv->v[1] > r_refdef.aliasvrectbottom)
+                fv->flags |= ALIAS_BOTTOM_CLIP; 
+        }
+    }
+
+    r_affinetridesc.numtriangles = 1;
+
+    ptri = (mtriangle_t *)((byte *)paliashdr + paliashdr->triangles);
+    for (i = 0; i < pmdl->numtris; i++, ptri++) {
+        pfv[0] = &pfinalverts[ptri->vertindex[0]];
+        pfv[1] = &pfinalverts[ptri->vertindex[1]];
+        pfv[2] = &pfinalverts[ptri->vertindex[2]];
+
+        if (pfv[0]->flags & pfv[1]->flags & pfv[2]->flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
+            continue;       // completely clipped
+        
+        if (!((pfv[0]->flags | pfv[1]->flags | pfv[2]->flags) & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))) { 
+            // totally unclipped
+            r_affinetridesc.pfinalverts = pfinalverts;
+            r_affinetridesc.ptriangles = ptri;
+            D_PolysetDraw ();
+        } else{ 
+            // partially clipped
+            R_AliasClipTriangle (ptri);
+        }
+    }
+}
+
+static void R_AliasPrepareUnclippedPoints(void)
+/*
+Definition at line 466 of file r_alias.c.
+
+References D_PolysetDraw(), D_PolysetDrawFinalVerts(), affinetridesc_t::drawtype, affinetridesc_t::numtriangles, mdl_t::numtris, mdl_t::numverts, pfinalverts, affinetridesc_t::pfinalverts, affinetridesc_t::ptriangles, R_AliasTransformAndProjectFinalVerts(), r_anumverts, aliashdr_s::stverts, and aliashdr_s::triangles.
+
+Referenced by R_AliasDrawModel().
+*/
+{
+    stvert_t *pstverts;
+
+    pstverts = (stvert_t *)((byte *)paliashdr + paliashdr->stverts);
+    r_anumverts = pmdl->numverts;
+
+    R_AliasTransformAndProjectFinalVerts(pfinalverts, pstverts);
+
+    if (r_affinetridesc.drawtype)
+        D_PolysetDrawFinalVerts (pfinalverts, r_anumverts);
+
+    r_affinetridesc.pfinalverts = pfinalverts;
+    r_affinetridesc.ptriangles = (mtriangle_t *) ((byte *)paliashdr + paliashdr->triangles);
+    r_affinetridesc.numtriangles = pmdl->numtris;
+
+    D_PolysetDraw ();
+}
+
+
+void R_AliasDrawModel(entity_t *ent)
+/*
+Definition at line 629 of file r_alias.c.
+
+References acolormap, CACHE_SIZE, entity_s::colormap, Com_DPrintf(), D_Aff8Patch(), D_PolysetUpdateTables(), affinetridesc_t::drawtype, entity_s::frame, entity_s::framelerp, MAXALIASVERTS, min, Mod_Extradata(), aliashdr_s::model, entity_s::model, modelorg, mdl_t::numframes, entity_s::oldframe, entity_s::origin, R_AliasCheckBBox(), R_AliasPreparePoints(), R_AliasPrepareUnclippedPoints(), R_AliasSetupFrame(), R_AliasSetupLighting(), R_AliasSetupSkin(), R_AliasSetUpTransform(), r_amodels_drawn, r_entorigin, r_framelerp, r_origin, entity_s::renderfx, RF_WEAPONMODEL, Sys_Error(), entity_s::trivial_accept, cvar_s::value, VectorCopy, VectorSubtract, and ziscale.
+
+Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
+*/
+{
+    finalvert_t finalverts[MAXALIASVERTS + ((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
+    auxvert_t auxverts[MAXALIASVERTS];
+
+    VectorCopy(ent->origin, r_entorigin);
+    VectorSubtract(r_origin, r_entorigin, modelorg);
+
+    pmodel = ent->model;
+    paliashdr = Mod_Extradata(pmodel);
+    pmdl = (mdl_t *) ((byte *) paliashdr + paliashdr->model);
+
+    if (ent->frame >= pmdl->numframes || ent->frame < 0) {
+        Com_DPrintf ("R_AliasDrawModel: no such frame %d\n", ent->frame);
+        ent->frame = 0;
+    }
+    if (ent->oldframe >= pmdl->numframes || ent->oldframe < 0) {
+        Com_DPrintf ("R_AliasDrawModel: no such oldframe %d\n", ent->oldframe);
+        ent->oldframe = 0;
+    }
+
+
+    if (!r_lerpframes.value || ent->framelerp < 0 || ent->oldframe == ent->frame)
+        r_framelerp = 1.0;
+    else
+        r_framelerp = min (ent->framelerp, 1);
+
+
+    if (!(ent->renderfx & RF_WEAPONMODEL)) {
+        if (!R_AliasCheckBBox(ent))
+            return;
+    }
+
+    r_amodels_drawn++;
+
+    // cache align
+    pfinalverts = (finalvert_t *) (((long) &finalverts[0] + CACHE_SIZE - 1) & ~(CACHE_SIZE - 1));
+    pauxverts = &auxverts[0];
+
+    R_AliasSetupSkin (ent);
+    R_AliasSetUpTransform (ent->trivial_accept);
+    R_AliasSetupLighting (ent);
+    R_AliasSetupFrame (ent);
+
+    if (!ent->colormap)
+        Sys_Error ("R_AliasDrawModel: !ent->colormap");
+
+    r_affinetridesc.drawtype = (ent->trivial_accept == 3);
+
+    if (r_affinetridesc.drawtype) {
+        D_PolysetUpdateTables ();       // FIXME: precalc...
+    }
+    else
+    {
+#ifdef id386
+        D_Aff8Patch (ent->colormap);
+#endif
+    }
+
+    acolormap = ent->colormap;
+
+    if (!(ent->renderfx & RF_WEAPONMODEL))
+        ziscale = (float) 0x8000 * (float) 0x10000;
+    else
+        ziscale = (float) 0x8000 * (float) 0x10000 * 3.0;
+
+    if (ent->trivial_accept)
+        R_AliasPrepareUnclippedPoints ();
+    else
+        R_AliasPreparePoints ();
 }
 
 int main()
