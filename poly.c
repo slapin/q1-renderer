@@ -3,7 +3,13 @@
 #define MAXHEIGHT 1024
 #define DPS_MAXSPANS MAXHEIGHT+1
 #define CACHE_SIZE 32
+#define ALIAS_LEFT_CLIP 0x0001
+#define ALIAS_TOP_CLIP 0x0002
+#define ALIAS_RIGHT_CLIP 0x0004
+#define ALIAS_BOTTOM_CLIP 0x0008
+#define ALIAS_Z_CLIP 0x0010
 #define ALIAS_ONSEAM 0x0020
+#define ALIAS_XY_CLIP_MASK 0x000F
 #define MAX_LBM_HEIGHT 480
 #define VectorCopy(a,b) \
 	((b)[0] = (a)[0], (b)[1] = (a)[1], (b)[2] = (a)[2])
@@ -359,9 +365,44 @@ typedef struct {
     float       size;
 } mdl_t;
 
+typedef struct entity_s {
+    vec3_t                  origin;
+    vec3_t                  angles; 
+    struct model_s          *model;         // NULL = no model
+    byte                    *colormap;
+    int                     skinnum;        // for Alias models
+    struct player_info_s    *scoreboard;    // identify player
+    int                     renderfx;       // RF_ bit mask
+    int                     effects;        // EF_ flags like EF_BLUE and etc, atm this used for powerup shells
+
+    int                     oldframe;
+    int                     frame;
+    float                   framelerp;
+
+    struct efrag_s          *efrag;         // linked list of efrags (FIXME)
+    int                     visframe;       // last frame this entity was found in an active leaf. only used for static objects
+
+    int                     dlightframe;    // dynamic lighting
+    int                     dlightbits;
+
+    //VULT MOTION TRAILS
+    float alpha;
+    
+    //FootStep sounds
+    //int   stepframe;//disabled
+
+    // FIXME: could turn these into a union
+    int                     trivial_accept;
+    struct mnode_s          *topnode;       // for bmodels, first world node that splits bmodel, or NULL if not split
+} entity_t;
+
 static aliashdr_t *paliashdr;
 static int r_anumverts;
 static mdl_t *pmdl;
+static finalvert_t *pfinalverts;
+static auxvert_t *pauxverts;
+static trivertx_t *r_oldapverts;
+static trivertx_t *r_apverts;
 
 /* end of r_alias symbols */
 
@@ -1201,7 +1242,7 @@ Referenced by R_AliasDrawModel().
 
     for (i = 0; i < r_anumverts; i++, fv++, av++, r_oldapverts++, r_apverts++, pstverts++) {
         R_AliasTransformFinalVert (fv, av, r_oldapverts, r_apverts, pstverts);
-        if (av->fv[2] < r_nearclip.value) {
+        if (av->fv[2] < 1.f) {
             fv->flags |= ALIAS_Z_CLIP;
         } else {
              R_AliasProjectFinalVert (fv, av);
