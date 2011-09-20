@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <math.h>
 #define MAXHEIGHT 1024
+
 #define DPS_MAXSPANS MAXHEIGHT+1
 #define CACHE_SIZE 32
 #define ALIAS_LEFT_CLIP 0x0001
@@ -323,6 +324,9 @@ static adivtab_t adivtab[32*32] = {
 };
 
 /* R_Alias symbols */
+#define MAXALIASVERTS	2000    // TODO: tune this
+#define RF_WEAPONMODEL	1
+
 typedef float vec_t;
 typedef vec_t vec3_t[3];
 typedef enum { ALIAS_SINGLE=0, ALIAS_GROUP } aliasframetype_t;
@@ -346,7 +350,7 @@ typedef struct aliashdr_s {
     int                 triangles;
     maliasframedesc_t   frames[1];
 } aliashdr_t;
-
+typedef enum {ST_SYNC=0, ST_RAND } synctype_t;
 typedef struct {
     int         ident;
     int         version;
@@ -364,6 +368,73 @@ typedef struct {
     int         flags;
     float       size;
 } mdl_t;
+
+typedef struct model_s {
+	char				name[MAX_QPATH];
+	qbool				needload; // bmodels and sprites don't cache normally
+
+	unsigned short		crc;
+
+	modhint_t			modhint;
+
+	modtype_t			type;
+	int					numframes;
+	synctype_t			synctype;
+	
+	int					flags;
+
+	// volume occupied by the model graphics
+	vec3_t				mins, maxs;
+	float				radius;
+
+	// brush model
+	int					firstmodelsurface, nummodelsurfaces;
+
+	// FIXME, don't really need these two
+	int					numsubmodels;
+	dmodel_t			*submodels;
+
+	int					numplanes;
+	mplane_t			*planes;
+
+	int					numleafs; // number of visible leafs, not counting 0
+	mleaf_t				*leafs;
+
+	int					numvertexes;
+	mvertex_t			*vertexes;
+
+	int					numedges;
+	medge_t				*edges;
+
+	int					numnodes;
+	int					firstnode;
+	mnode_t				*nodes;
+
+	int					numtexinfo;
+	mtexinfo_t			*texinfo;
+
+	int					numsurfaces;
+	msurface_t			*surfaces;
+
+	int					numsurfedges;
+	int					*surfedges;
+
+	int					nummarksurfaces;
+	msurface_t			**marksurfaces;
+
+	int					numtextures;
+	texture_t			**textures;
+
+	byte				*visdata;
+	byte				*lightdata;
+
+	int					bspversion;
+	qbool				isworldmodel;
+
+	// additional model data
+	cache_user_t		cache; // only access through Mod_Extradata
+
+} model_t;
 
 typedef struct entity_s {
     vec3_t                  origin;
@@ -396,6 +467,41 @@ typedef struct entity_s {
     struct mnode_s          *topnode;       // for bmodels, first world node that splits bmodel, or NULL if not split
 } entity_t;
 
+typedef struct vrect_s {
+    int x,y,width,height;
+    struct vrect_s *pnext;
+} vrect_t;
+
+typedef struct {
+    vrect_t     vrect;              // subwindow in video for refresh
+                                    // FIXME: not need vrect next field here?
+    vrect_t     aliasvrect;         // scaled Alias version
+    int         vrectright, vrectbottom;    // right & bottom screen coords
+    int         aliasvrectright, aliasvrectbottom;  // scaled Alias versions
+    float       vrectrightedge;         // rightmost right edge we care about,
+                                        //  for use in edge list
+    float       fvrectx, fvrecty;       // for floating-point compares
+    float       fvrectx_adj, fvrecty_adj; // left and top edges, for clamping
+    int         vrect_x_adj_shift20;    // (vrect.x + 0.5 - epsilon) << 20
+    int         vrectright_adj_shift20; // (vrectright + 0.5 - epsilon) << 20
+    float       fvrectright_adj, fvrectbottom_adj;
+                                        // right and bottom edges, for clamping
+    float       fvrectright;            // rightmost edge, for Alias clamping
+    float       fvrectbottom;           // bottommost edge, for Alias clamping
+    float       horizontalFieldOfView;  // at Z = 1.0, this many X is visible 
+                                        // 2.0 = 90 degrees
+    float       xOrigin;            // should probably always be 0.5
+    float       yOrigin;            // between be around 0.3 to 0.5
+
+    vec3_t      vieworg;
+    vec3_t      viewangles;
+
+    float       fov_x, fov_y;
+    
+    int         ambientlight;
+} refdef_t;
+
+
 static aliashdr_t *paliashdr;
 static int r_anumverts;
 static mdl_t *pmdl;
@@ -403,6 +509,16 @@ static finalvert_t *pfinalverts;
 static auxvert_t *pauxverts;
 static trivertx_t *r_oldapverts;
 static trivertx_t *r_apverts;
+static refdef_t r_refdef;
+static vec3_t r_entorigin;	// the currently rendering entity in world
+				// coordinates
+static vec3_t  r_origin;
+static vec3_t modelorg /*, base_modelorg */;
+static model_t *pmodel;
+static int r_lerpframes = 1;
+static float r_framelerp;
+static int r_amodels_drawn;
+static float ziscale;
 
 /* end of r_alias symbols */
 
@@ -1337,7 +1453,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
     }
 
 
-    if (!r_lerpframes.value || ent->framelerp < 0 || ent->oldframe == ent->frame)
+    if (!r_lerpframes || ent->framelerp < 0 || ent->oldframe == ent->frame)
         r_framelerp = 1.0;
     else
         r_framelerp = min (ent->framelerp, 1);
