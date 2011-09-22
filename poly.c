@@ -326,6 +326,18 @@ static adivtab_t adivtab[32*32] = {
 /* R_Alias symbols */
 #define MAXALIASVERTS	2000    // TODO: tune this
 #define RF_WEAPONMODEL	1
+#define RF_LIMITLERP	4
+#define MAX_QPATH	64
+#define	MAX_MAP_HULLS	4
+#define MIPLEVELS	4
+#define MAXLIGHTMAPS	4
+#define NUMVERTEXNORMALS    162
+#ifndef min
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef max
+#define max(a,b) ((a) > (b) ? (a) : (b))
+#endif
 
 typedef float vec_t;
 typedef vec_t vec3_t[3];
@@ -368,6 +380,121 @@ typedef struct {
     int         flags;
     float       size;
 } mdl_t;
+typedef enum {false, true} qbool;
+typedef enum {MOD_NORMAL, MOD_PLAYER, MOD_EYES, MOD_FLAME,
+      MOD_THUNDERBOLT, MOD_BACKPACK,
+      MOD_RAIL, MOD_BUILDINGGIBS} modhint_t;
+typedef enum {mod_brush, mod_sprite, mod_alias} modtype_t;
+
+typedef struct
+{
+	float		mins[3], maxs[3];
+	float		origin[3];
+	int			headnode[MAX_MAP_HULLS];
+	int			visleafs;		// not including the solid leaf 0
+	int			firstface, numfaces;
+} dmodel_t;
+
+typedef struct mplane_s {
+    vec3_t  normal;
+    float   dist;
+    byte    type;           // for texture axis selection and fast side tests
+    byte    signbits;       // signx + signy<<1 + signz<<1
+    byte    pad[2];
+} mplane_t;
+
+typedef struct texture_s {
+    char                name[16];
+    unsigned            width, height;
+    int                 anim_total;                 // total tenths in sequence ( 0 = no)
+    int                 anim_min, anim_max;         // time for this frame min <=time< max
+    struct texture_s    *anim_next;                 // in the animation sequence
+    struct texture_s    *alternate_anims;           // bmodels in frmae 1 use these
+    unsigned            offsets[MIPLEVELS];         // four mip maps stored
+    int                 flatcolor3ub;               // hetman: r_drawflat for software builds
+} texture_t;
+
+typedef struct mtexinfo_s {
+    float               vecs[2][4];
+    float               mipadjust;
+    texture_t           *texture;
+    int                 flags;
+} mtexinfo_t;
+
+typedef struct msurface_s {
+    int                 visframe;                   // should be drawn when node is crossed
+
+    int                 dlightframe;
+    int                 dlightbits;
+
+    mplane_t            *plane;
+    int                 flags;
+
+    int                 firstedge;                  // look up in model->surfedges[], negative numbers
+    int                 numedges;                   // are backwards edges
+    
+    // surface generation data
+    struct surfcache_s  *cachespots[MIPLEVELS];
+
+    short               texturemins[2];
+    short               extents[2];
+
+    mtexinfo_t          *texinfo;
+    
+    // lighting info
+    byte                styles[MAXLIGHTMAPS];
+    byte                *samples;                   // [numstyles*surfsize]
+} msurface_t;
+
+
+typedef struct mleaf_s {
+    // common with node
+    int                 contents;                   // wil be a negative contents number
+    int                 visframe;                   // node needs to be traversed if current
+
+    short               minmaxs[6];                 // for bounding box culling
+
+    struct mnode_s      *parent;
+
+    // leaf specific
+    byte                *compressed_vis;
+    struct efrag_s      *efrags;
+
+    msurface_t          **firstmarksurface;
+    int                 nummarksurfaces;
+    int                 key;                        // BSP sequence number for leaf's contents
+} mleaf_t;
+
+typedef struct mvertex_s {
+    vec3_t      position;
+} mvertex_t;
+
+typedef struct medge_s {
+    unsigned short      v[2];
+    unsigned int        cachededgeoffset;
+} medge_t;
+
+typedef struct mnode_s {
+    // common with leaf
+    int                 contents;                   // 0, to differentiate from leafs
+    int                 visframe;                   // node needs to be traversed if current
+    
+    short               minmaxs[6];                 // for bounding box culling
+
+    struct mnode_s      *parent;
+
+    // node specific
+    mplane_t            *plane;
+    struct mnode_s      *children[2];   
+
+    unsigned short      firstsurface;
+    unsigned short      numsurfaces;
+} mnode_t;
+
+typedef struct cache_user_s
+{
+    void *data;
+} cache_user_t;
 
 typedef struct model_s {
 	char				name[MAX_QPATH];
@@ -519,6 +646,180 @@ static int r_lerpframes = 1;
 static float r_framelerp;
 static int r_amodels_drawn;
 static float ziscale;
+static entity_t *currententity;
+static float r_lerpdistance;
+static float aliastransform[3][4];
+static float   r_avertexnormals[NUMVERTEXNORMALS][3] = {
+{-0.525731, 0.000000, 0.850651}, 
+{-0.442863, 0.238856, 0.864188}, 
+{-0.295242, 0.000000, 0.955423}, 
+{-0.309017, 0.500000, 0.809017}, 
+{-0.162460, 0.262866, 0.951056}, 
+{0.000000, 0.000000, 1.000000}, 
+{0.000000, 0.850651, 0.525731}, 
+{-0.147621, 0.716567, 0.681718}, 
+{0.147621, 0.716567, 0.681718}, 
+{0.000000, 0.525731, 0.850651}, 
+{0.309017, 0.500000, 0.809017}, 
+{0.525731, 0.000000, 0.850651}, 
+{0.295242, 0.000000, 0.955423}, 
+{0.442863, 0.238856, 0.864188}, 
+{0.162460, 0.262866, 0.951056}, 
+{-0.681718, 0.147621, 0.716567}, 
+{-0.809017, 0.309017, 0.500000}, 
+{-0.587785, 0.425325, 0.688191}, 
+{-0.850651, 0.525731, 0.000000}, 
+{-0.864188, 0.442863, 0.238856}, 
+{-0.716567, 0.681718, 0.147621}, 
+{-0.688191, 0.587785, 0.425325}, 
+{-0.500000, 0.809017, 0.309017}, 
+{-0.238856, 0.864188, 0.442863}, 
+{-0.425325, 0.688191, 0.587785}, 
+{-0.716567, 0.681718, -0.147621}, 
+{-0.500000, 0.809017, -0.309017}, 
+{-0.525731, 0.850651, 0.000000}, 
+{0.000000, 0.850651, -0.525731}, 
+{-0.238856, 0.864188, -0.442863}, 
+{0.000000, 0.955423, -0.295242}, 
+{-0.262866, 0.951056, -0.162460}, 
+{0.000000, 1.000000, 0.000000}, 
+{0.000000, 0.955423, 0.295242}, 
+{-0.262866, 0.951056, 0.162460}, 
+{0.238856, 0.864188, 0.442863}, 
+{0.262866, 0.951056, 0.162460}, 
+{0.500000, 0.809017, 0.309017}, 
+{0.238856, 0.864188, -0.442863}, 
+{0.262866, 0.951056, -0.162460}, 
+{0.500000, 0.809017, -0.309017}, 
+{0.850651, 0.525731, 0.000000}, 
+{0.716567, 0.681718, 0.147621}, 
+{0.716567, 0.681718, -0.147621}, 
+{0.525731, 0.850651, 0.000000}, 
+{0.425325, 0.688191, 0.587785}, 
+{0.864188, 0.442863, 0.238856}, 
+{0.688191, 0.587785, 0.425325}, 
+{0.809017, 0.309017, 0.500000}, 
+{0.681718, 0.147621, 0.716567}, 
+{0.587785, 0.425325, 0.688191}, 
+{0.955423, 0.295242, 0.000000}, 
+{1.000000, 0.000000, 0.000000}, 
+{0.951056, 0.162460, 0.262866}, 
+{0.850651, -0.525731, 0.000000}, 
+{0.955423, -0.295242, 0.000000}, 
+{0.864188, -0.442863, 0.238856}, 
+{0.951056, -0.162460, 0.262866}, 
+{0.809017, -0.309017, 0.500000}, 
+{0.681718, -0.147621, 0.716567}, 
+{0.850651, 0.000000, 0.525731}, 
+{0.864188, 0.442863, -0.238856}, 
+{0.809017, 0.309017, -0.500000}, 
+{0.951056, 0.162460, -0.262866}, 
+{0.525731, 0.000000, -0.850651}, 
+{0.681718, 0.147621, -0.716567}, 
+{0.681718, -0.147621, -0.716567}, 
+{0.850651, 0.000000, -0.525731}, 
+{0.809017, -0.309017, -0.500000}, 
+{0.864188, -0.442863, -0.238856}, 
+{0.951056, -0.162460, -0.262866}, 
+{0.147621, 0.716567, -0.681718}, 
+{0.309017, 0.500000, -0.809017}, 
+{0.425325, 0.688191, -0.587785}, 
+{0.442863, 0.238856, -0.864188}, 
+{0.587785, 0.425325, -0.688191}, 
+{0.688191, 0.587785, -0.425325}, 
+{-0.147621, 0.716567, -0.681718}, 
+{-0.309017, 0.500000, -0.809017}, 
+{0.000000, 0.525731, -0.850651}, 
+{-0.525731, 0.000000, -0.850651}, 
+{-0.442863, 0.238856, -0.864188}, 
+{-0.295242, 0.000000, -0.955423}, 
+{-0.162460, 0.262866, -0.951056}, 
+{0.000000, 0.000000, -1.000000}, 
+{0.295242, 0.000000, -0.955423}, 
+{0.162460, 0.262866, -0.951056}, 
+{-0.442863, -0.238856, -0.864188}, 
+{-0.309017, -0.500000, -0.809017}, 
+{-0.162460, -0.262866, -0.951056}, 
+{0.000000, -0.850651, -0.525731}, 
+{-0.147621, -0.716567, -0.681718}, 
+{0.147621, -0.716567, -0.681718}, 
+{0.000000, -0.525731, -0.850651}, 
+{0.309017, -0.500000, -0.809017}, 
+{0.442863, -0.238856, -0.864188}, 
+{0.162460, -0.262866, -0.951056}, 
+{0.238856, -0.864188, -0.442863}, 
+{0.500000, -0.809017, -0.309017}, 
+{0.425325, -0.688191, -0.587785}, 
+{0.716567, -0.681718, -0.147621}, 
+{0.688191, -0.587785, -0.425325}, 
+{0.587785, -0.425325, -0.688191}, 
+{0.000000, -0.955423, -0.295242}, 
+{0.000000, -1.000000, 0.000000}, 
+{0.262866, -0.951056, -0.162460}, 
+{0.000000, -0.850651, 0.525731}, 
+{0.000000, -0.955423, 0.295242}, 
+{0.238856, -0.864188, 0.442863}, 
+{0.262866, -0.951056, 0.162460}, 
+{0.500000, -0.809017, 0.309017}, 
+{0.716567, -0.681718, 0.147621}, 
+{0.525731, -0.850651, 0.000000}, 
+{-0.238856, -0.864188, -0.442863}, 
+{-0.500000, -0.809017, -0.309017}, 
+{-0.262866, -0.951056, -0.162460}, 
+{-0.850651, -0.525731, 0.000000}, 
+{-0.716567, -0.681718, -0.147621}, 
+{-0.716567, -0.681718, 0.147621}, 
+{-0.525731, -0.850651, 0.000000}, 
+{-0.500000, -0.809017, 0.309017}, 
+{-0.238856, -0.864188, 0.442863}, 
+{-0.262866, -0.951056, 0.162460}, 
+{-0.864188, -0.442863, 0.238856}, 
+{-0.809017, -0.309017, 0.500000}, 
+{-0.688191, -0.587785, 0.425325}, 
+{-0.681718, -0.147621, 0.716567}, 
+{-0.442863, -0.238856, 0.864188}, 
+{-0.587785, -0.425325, 0.688191}, 
+{-0.309017, -0.500000, 0.809017}, 
+{-0.147621, -0.716567, 0.681718}, 
+{-0.425325, -0.688191, 0.587785}, 
+{-0.162460, -0.262866, 0.951056}, 
+{0.442863, -0.238856, 0.864188}, 
+{0.162460, -0.262866, 0.951056}, 
+{0.309017, -0.500000, 0.809017}, 
+{0.147621, -0.716567, 0.681718}, 
+{0.000000, -0.525731, 0.850651}, 
+{0.425325, -0.688191, 0.587785}, 
+{0.587785, -0.425325, 0.688191}, 
+{0.688191, -0.587785, 0.425325}, 
+{-0.955423, 0.295242, 0.000000}, 
+{-0.951056, 0.162460, 0.262866}, 
+{-1.000000, 0.000000, 0.000000}, 
+{-0.850651, 0.000000, 0.525731}, 
+{-0.955423, -0.295242, 0.000000}, 
+{-0.951056, -0.162460, 0.262866}, 
+{-0.864188, 0.442863, -0.238856}, 
+{-0.951056, 0.162460, -0.262866}, 
+{-0.809017, 0.309017, -0.500000}, 
+{-0.864188, -0.442863, -0.238856}, 
+{-0.951056, -0.162460, -0.262866}, 
+{-0.809017, -0.309017, -0.500000}, 
+{-0.681718, 0.147621, -0.716567}, 
+{-0.681718, -0.147621, -0.716567}, 
+{-0.850651, 0.000000, -0.525731}, 
+{-0.688191, 0.587785, -0.425325}, 
+{-0.587785, 0.425325, -0.688191}, 
+{-0.425325, 0.688191, -0.587785}, 
+{-0.425325, -0.688191, -0.587785}, 
+{-0.587785, -0.425325, -0.688191}, 
+{-0.688191, -0.587785, -0.425325}, 
+};
+static vec3_t r_plightvec;
+int                 r_ambientlight;
+float               r_shadelight;
+float aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
+static finalvert_t fv[2][8];
+static auxvert_t av[8];
+static float r_nearclip = 1.0;
 
 /* end of r_alias symbols */
 
@@ -1334,6 +1635,324 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
         D_DrawNonSubdiv ();
     }
 }
+
+static float _mathlib_temp_float1;
+static vec3_t _mathlib_temp_vec1;
+
+#define VectorL2Compare(v, w, m)                        \
+    (_mathlib_temp_float1 = (m) * (m),                      \
+    _mathlib_temp_vec1[0] = (v)[0] - (w)[0], _mathlib_temp_vec1[1] = (v)[1] - (w)[1], _mathlib_temp_vec1[2] = (v)[2] - (w)[2],  \
+    _mathlib_temp_vec1[0] * _mathlib_temp_vec1[0] +     \
+    _mathlib_temp_vec1[1] * _mathlib_temp_vec1[1] +     \
+    _mathlib_temp_vec1[2] * _mathlib_temp_vec1[2] < _mathlib_temp_float1)
+
+#define VectorInterpolate(v1, _frac, v2, v)                         \
+do {                                                                \
+    _mathlib_temp_float1 = _frac;                                   \
+                                                                    \
+    (v)[0] = (v1)[0] + _mathlib_temp_float1 * ((v2)[0] - (v1)[0]);  \
+    (v)[1] = (v1)[1] + _mathlib_temp_float1 * ((v2)[1] - (v1)[1]);  \
+    (v)[2] = (v1)[2] + _mathlib_temp_float1 * ((v2)[2] - (v1)[2]);  \
+} while (0);
+
+#define DotProduct(x,y)         ((x)[0] * (y)[0] + (x)[1] * (y)[1] + (x)[2] * (y)[2])
+
+
+static void R_AliasTransformFinalVert (finalvert_t *fv, auxvert_t *av, trivertx_t *pverts1, trivertx_t *pverts2, stvert_t *pstverts)
+/*
+Definition at line 373 of file r_alias.c.
+
+References aliastransform, currententity, DotProduct, finalvert_s::flags, auxvert_t::fv, int, trivertx_t::lightnormalindex, max, stvert_t::onseam, r_ambientlight, r_avertexnormals, r_framelerp, r_lerpdistance, r_plightvec, r_shadelight, entity_s::renderfx, RF_LIMITLERP, stvert_t::s, stvert_t::t, finalvert_s::v, trivertx_t::v, VectorInterpolate, and VectorL2Compare.
+
+Referenced by R_AliasPreparePoints().
+*/
+{
+    int temp;
+    float lightcos, lerpfrac;
+    vec3_t interpolated_verts, interpolated_norm;
+
+
+    lerpfrac = r_framelerp;
+    if ((currententity->renderfx & RF_LIMITLERP)) {
+        
+        lerpfrac = VectorL2Compare(pverts1->v, pverts2->v, r_lerpdistance) ? r_framelerp : 1;
+    }
+
+    VectorInterpolate(pverts1->v, lerpfrac, pverts2->v, interpolated_verts);
+
+    av->fv[0] = DotProduct(interpolated_verts, aliastransform[0]) + aliastransform[0][3];
+    av->fv[1] = DotProduct(interpolated_verts, aliastransform[1]) + aliastransform[1][3];
+    av->fv[2] = DotProduct(interpolated_verts, aliastransform[2]) + aliastransform[2][3];
+
+    fv->v[2] = pstverts->s;
+    fv->v[3] = pstverts->t;
+
+    fv->flags = pstverts->onseam;
+
+    // lighting
+    VectorInterpolate(r_avertexnormals[pverts1->lightnormalindex], lerpfrac,
+        r_avertexnormals[pverts1->lightnormalindex], interpolated_norm);
+    lightcos = DotProduct (interpolated_norm, r_plightvec);
+    temp = r_ambientlight;
+
+
+    if (lightcos < 0) {
+        temp += (int) (r_shadelight * lightcos);
+        // clamp; because we limited the minimum ambient and shading light, we don't have to clamp low light, just bright
+        temp = max(temp, 0);
+    }
+    fv->v[4] = temp;
+}
+
+static void R_AliasProjectFinalVert(finalvert_t *fv, auxvert_t *av)
+/*
+Definition at line 456 of file r_alias.c.
+
+References aliasxcenter, aliasxscale, aliasycenter, aliasyscale, auxvert_t::fv, finalvert_s::v, and ziscale.
+
+Referenced by R_Alias_clip_z(), and R_AliasPreparePoints().
+*/
+{
+    float zi;
+
+    // project points
+    zi = 1.0 / av->fv[2];
+    fv->v[5] = zi * ziscale;
+    fv->v[0] = (av->fv[0] * aliasxscale * zi) + aliasxcenter;
+    fv->v[1] = (av->fv[1] * aliasyscale * zi) + aliasycenter;
+}
+
+static int R_AliasClip(finalvert_t *in, finalvert_t *out, int flag, int count,
+    void(*clip)(finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out))
+/*
+Definition at line 200 of file r_aclip.c.
+
+References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP, refdef_t::aliasvrect, refdef_t::aliasvrectbottom, refdef_t::aliasvrectright, count, finalvert_s::flags, r_refdef, vrect_s::x, and vrect_s::y.
+
+Referenced by R_AliasClipTriangle().
+*/
+{
+    int         i,j,k;
+    int         flags, oldflags;
+    
+    j = count-1;
+    k = 0;
+    for (i=0 ; i<count ; j = i, i++)
+    {
+        oldflags = in[j].flags & flag;
+        flags = in[i].flags & flag;
+
+        if (flags && oldflags)
+            continue;
+        if (oldflags ^ flags)
+        {
+            clip (&in[j], &in[i], &out[k]);
+            out[k].flags = 0;
+            if (out[k].v[0] < r_refdef.aliasvrect.x)
+                out[k].flags |= ALIAS_LEFT_CLIP;
+            if (out[k].v[1] < r_refdef.aliasvrect.y)
+                out[k].flags |= ALIAS_TOP_CLIP;
+            if (out[k].v[0] > r_refdef.aliasvrectright)
+                out[k].flags |= ALIAS_RIGHT_CLIP;
+            if (out[k].v[1] > r_refdef.aliasvrectbottom)
+                out[k].flags |= ALIAS_BOTTOM_CLIP;  
+            k++;
+        }
+        if (!flags)
+        {
+            out[k] = in[i];
+            k++;
+        }
+    }
+    
+    return k;
+}
+
+/*
+================
+R_Alias_clip_z
+
+pfv0 is the unclipped vertex, pfv1 is the z-clipped vertex
+================
+*/
+static void R_Alias_clip_z (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
+/*
+Definition at line 56 of file r_aclip.c.
+
+References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP, refdef_t::aliasvrect, refdef_t::aliasvrectbottom, refdef_t::aliasvrectright, finalvert_s::flags, auxvert_t::fv, R_AliasProjectFinalVert(), r_nearclip, r_refdef, finalvert_s::v, cvar_s::value, vrect_s::x, and vrect_s::y.
+
+Referenced by R_AliasClipTriangle().
+*/
+{
+    float       scale;
+    auxvert_t   *pav0, *pav1, avout;
+
+    pav0 = &av[pfv0 - &fv[0][0]];
+    pav1 = &av[pfv1 - &fv[0][0]];
+
+    if (pfv0->v[1] >= pfv1->v[1])
+    {
+        scale = (r_nearclip - pav0->fv[2]) /
+                (pav1->fv[2] - pav0->fv[2]);
+    
+        avout.fv[0] = pav0->fv[0] + (pav1->fv[0] - pav0->fv[0]) * scale;
+        avout.fv[1] = pav0->fv[1] + (pav1->fv[1] - pav0->fv[1]) * scale;
+        avout.fv[2] = r_nearclip;
+    
+        out->v[2] = pfv0->v[2] + (pfv1->v[2] - pfv0->v[2]) * scale;
+        out->v[3] = pfv0->v[3] + (pfv1->v[3] - pfv0->v[3]) * scale;
+        out->v[4] = pfv0->v[4] + (pfv1->v[4] - pfv0->v[4]) * scale;
+    }
+    else
+    {
+        scale = (r_nearclip - pav1->fv[2]) /
+                (pav0->fv[2] - pav1->fv[2]);
+    
+        avout.fv[0] = pav1->fv[0] + (pav0->fv[0] - pav1->fv[0]) * scale;
+        avout.fv[1] = pav1->fv[1] + (pav0->fv[1] - pav1->fv[1]) * scale;
+        avout.fv[2] = r_nearclip;
+    
+        out->v[2] = pfv1->v[2] + (pfv0->v[2] - pfv1->v[2]) * scale;
+        out->v[3] = pfv1->v[3] + (pfv0->v[3] - pfv1->v[3]) * scale;
+        out->v[4] = pfv1->v[4] + (pfv0->v[4] - pfv1->v[4]) * scale;
+    }
+
+    R_AliasProjectFinalVert (out, &avout);
+
+    if (out->v[0] < r_refdef.aliasvrect.x)
+        out->flags |= ALIAS_LEFT_CLIP;
+    if (out->v[1] < r_refdef.aliasvrect.y)
+        out->flags |= ALIAS_TOP_CLIP;
+    if (out->v[0] > r_refdef.aliasvrectright)
+        out->flags |= ALIAS_RIGHT_CLIP;
+    if (out->v[1] > r_refdef.aliasvrectbottom)
+        out->flags |= ALIAS_BOTTOM_CLIP;    
+}
+
+
+
+static void R_AliasClipTriangle(mtriangle_t *ptri)
+/*
+Definition at line 245 of file r_aclip.c.
+
+References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_ONSEAM, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP, ALIAS_Z_CLIP, refdef_t::aliasvrect, refdef_t::aliasvrectbottom, refdef_t::aliasvrectright, D_PolysetDraw(), mtriangle_s::facesfront, finalvert_s::flags, pauxverts, affinetridesc_t::pfinalverts, pfinalverts, affinetridesc_t::ptriangles, r_affinetridesc, R_Alias_clip_bottom(), R_Alias_clip_left(), R_Alias_clip_right(), R_Alias_clip_top(), R_Alias_clip_z(), R_AliasClip(), r_refdef, affinetridesc_t::seamfixupX16, finalvert_s::v, mtriangle_s::vertindex, vrect_s::x, and vrect_s::y.
+
+Referenced by R_AliasPreparePoints().
+*/
+{
+    int             i, k, pingpong;
+    mtriangle_t     mtri;
+    unsigned        clipflags;
+
+// copy vertexes and fix seam texture coordinates
+    if (ptri->facesfront)
+    {
+        fv[0][0] = pfinalverts[ptri->vertindex[0]];
+        fv[0][1] = pfinalverts[ptri->vertindex[1]];
+        fv[0][2] = pfinalverts[ptri->vertindex[2]];
+    }
+    else
+    {
+        for (i=0 ; i<3 ; i++)
+        {
+            fv[0][i] = pfinalverts[ptri->vertindex[i]];
+    
+            if (!ptri->facesfront && (fv[0][i].flags & ALIAS_ONSEAM) )
+                fv[0][i].v[2] += r_affinetridesc.seamfixupX16;
+        }
+    }
+
+// clip
+    clipflags = fv[0][0].flags | fv[0][1].flags | fv[0][2].flags;
+
+    if (clipflags & ALIAS_Z_CLIP)
+    {
+        for (i=0 ; i<3 ; i++)
+            av[i] = pauxverts[ptri->vertindex[i]];
+
+        k = R_AliasClip (fv[0], fv[1], ALIAS_Z_CLIP, 3, R_Alias_clip_z);
+        if (k == 0)
+            return;
+
+        pingpong = 1;
+        clipflags = fv[1][0].flags | fv[1][1].flags | fv[1][2].flags;
+    }
+    else
+    {
+        pingpong = 0;
+        k = 3;
+    }
+
+    if (clipflags & ALIAS_LEFT_CLIP)
+    {
+        k = R_AliasClip (fv[pingpong], fv[pingpong ^ 1],
+                            ALIAS_LEFT_CLIP, k, R_Alias_clip_left);
+        if (k == 0)
+            return;
+
+        pingpong ^= 1;
+    }
+
+    if (clipflags & ALIAS_RIGHT_CLIP)
+    {
+        k = R_AliasClip (fv[pingpong], fv[pingpong ^ 1],
+                            ALIAS_RIGHT_CLIP, k, R_Alias_clip_right);
+        if (k == 0)
+            return;
+
+        pingpong ^= 1;
+    }
+
+    if (clipflags & ALIAS_BOTTOM_CLIP)
+    {
+        k = R_AliasClip (fv[pingpong], fv[pingpong ^ 1],
+                            ALIAS_BOTTOM_CLIP, k, R_Alias_clip_bottom);
+        if (k == 0)
+            return;
+
+        pingpong ^= 1;
+    }
+
+    if (clipflags & ALIAS_TOP_CLIP)
+    {
+        k = R_AliasClip (fv[pingpong], fv[pingpong ^ 1],
+                            ALIAS_TOP_CLIP, k, R_Alias_clip_top);
+        if (k == 0)
+            return;
+
+        pingpong ^= 1;
+    }
+
+    for (i=0 ; i<k ; i++)
+    {
+        if (fv[pingpong][i].v[0] < r_refdef.aliasvrect.x)
+            fv[pingpong][i].v[0] = r_refdef.aliasvrect.x;
+        else if (fv[pingpong][i].v[0] > r_refdef.aliasvrectright)
+            fv[pingpong][i].v[0] = r_refdef.aliasvrectright;
+
+        if (fv[pingpong][i].v[1] < r_refdef.aliasvrect.y)
+            fv[pingpong][i].v[1] = r_refdef.aliasvrect.y;
+        else if (fv[pingpong][i].v[1] > r_refdef.aliasvrectbottom)
+            fv[pingpong][i].v[1] = r_refdef.aliasvrectbottom;
+
+        fv[pingpong][i].flags = 0;
+    }
+
+// draw triangles
+    mtri.facesfront = ptri->facesfront;
+    r_affinetridesc.ptriangles = &mtri;
+    r_affinetridesc.pfinalverts = fv[pingpong];
+
+// FIXME: do all at once as trifan?
+    mtri.vertindex[0] = 0;
+    for (i=1 ; i<k-1 ; i++)
+    {
+        mtri.vertindex[1] = i;
+        mtri.vertindex[2] = i+1;
+        D_PolysetDraw ();
+    }
+}
+
 
 static void R_AliasPreparePoints(void)
 /*
