@@ -1,4 +1,5 @@
+CFLAGS = -g -O0 -Wall
 all: poly
-poly: poly.c
-	$(CC) -Wall -o poly poly.c -lm
+poly: poly.o
+	$(CC) $(CFLAGS) -o poly poly.o -lm
 
