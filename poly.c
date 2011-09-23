@@ -1,5 +1,8 @@
 #include <stddef.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #define MAXHEIGHT 1024
 
 #define DPS_MAXSPANS MAXHEIGHT+1
@@ -14,7 +17,6 @@
 #define MAX_LBM_HEIGHT 480
 #define VectorCopy(a,b) \
 	((b)[0] = (a)[0], (b)[1] = (a)[1], (b)[2] = (a)[2])
-
 
 typedef unsigned char byte;
 typedef int fixed8_t;
@@ -338,6 +340,32 @@ static adivtab_t adivtab[32*32] = {
 #ifndef max
 #define max(a,b) ((a) > (b) ? (a) : (b))
 #endif
+#define bound(a,b,c) ((a) >= (c) ? (a) : \
+                    (b) < (a) ? (a) : (b) > (c) ? (c) : (b))
+
+#define VectorSubtract(a,b,c)   ((c)[0] = (a)[0] - (b)[0], (c)[1] = (a)[1] - (b)[1], (c)[2] = (a)[2] - (b)[2])
+#define VectorNegate(a,b)       ((b)[0] = -(a)[0], (b)[1] = -(a)[1], (b)[2] = -(a)[2])
+#define R_AliasTransformVector(in, out)                                         \
+    (((out)[0] = DotProduct((in), aliastransform[0]) + aliastransform[0][3]),   \
+    ((out)[1] = DotProduct((in), aliastransform[1]) + aliastransform[1][3]),    \
+    ((out)[2] = DotProduct((in), aliastransform[2]) + aliastransform[2][3]))
+
+#define Sys_Error printf
+#define Host_Error printf
+#define Com_DPrintf printf
+#define COM_FileBase(i, o) strcpy(o, i)
+#define IDPOLYHEADER    (('O'<<24)+('P'<<16)+('D'<<8)+'I')
+#define	ALIAS_VERSION	6
+#define ALIAS_BASE_SIZE_RATIO       (1.0 / 11.0)
+                    // normalizing factor so player model works out to about
+                    //  1 pixel per triangle
+#define PITCH   0       // up / down
+#define YAW     1       // left / right
+#define ROLL    2       // fall over
+#define MAX_INFO_STRING	1024
+
+
+
 
 typedef float vec_t;
 typedef vec_t vec3_t[3];
@@ -496,6 +524,14 @@ typedef struct cache_user_s
     void *data;
 } cache_user_t;
 
+typedef struct cache_system_s {
+    int                     size; // including this header
+    cache_user_t            *user;
+    char                    name[16];
+    struct cache_system_s   *prev, *next;
+    struct cache_system_s   *lru_prev, *lru_next; // for LRU flushing
+} cache_system_t;
+
 typedef struct model_s {
 	char				name[MAX_QPATH];
 	qbool				needload; // bmodels and sprites don't cache normally
@@ -563,6 +599,58 @@ typedef struct model_s {
 
 } model_t;
 
+#if 0
+typedef struct player_info_s 
+{
+    int     userid;
+    char    userinfo[MAX_INFO_STRING];
+
+    // Scoreboard information.
+    char    name[MAX_SCOREBOARDNAME];
+    float   entertime;
+    int     frags;
+    int     ping;
+    byte    pl;
+
+    // Skin information.
+    int     topcolor;
+    int     bottomcolor;
+
+    int     _topcolor;
+    int     _bottomcolor;
+
+    int     real_topcolor;
+    int     real_bottomcolor;
+    char    team[MAX_INFO_STRING];
+    char    _team[MAX_INFO_STRING];
+
+    int    fps_msec;
+    int    last_fps;
+    int    fps;                     // > 0 - fps, < 0 - invalid, 0 - collecting
+    int    fps_frames;
+    double fps_measure_time;
+    qbool isnear;
+
+    int     spectator;
+    byte    translations[VID_GRADES*256];
+    skin_t  *skin;
+
+    int     stats[MAX_CL_STATS];
+
+
+    qbool   skin_refresh;
+    qbool   ignored;                // for ignore
+    qbool   validated;              // for authentication
+    char    f_server[16];           // for f_server responses
+
+    // VULT DEATH EFFECT
+    // Better putting the dead flag here instead of on the entity so whats dead stays dead
+    qbool dead;
+
+} player_info_t;
+#endif
+
+
 typedef struct entity_s {
     vec3_t                  origin;
     vec3_t                  angles; 
@@ -628,6 +716,76 @@ typedef struct {
     int         ambientlight;
 } refdef_t;
 
+typedef struct dtriangle_s {
+    int                 facesfront;
+    int                 vertindex[3];
+} dtriangle_t;
+
+typedef struct {
+    aliasframetype_t    type;
+} daliasframetype_t;
+
+typedef struct {
+    aliasskintype_t type;
+} daliasskintype_t;
+
+typedef struct {
+    int         numskins;
+} daliasskingroup_t;
+
+typedef struct {
+    float   interval;
+} daliasskininterval_t;
+
+typedef struct maliasskingroup_s {
+    int                 numskins;
+    int                 intervals;
+    maliasskindesc_t    skindescs[1];
+} maliasskingroup_t;
+
+typedef struct {
+    trivertx_t  bboxmin;    // lightnormal isn't used
+    trivertx_t  bboxmax;    // lightnormal isn't used
+    char        name[16];   // frame name from grabbing
+} daliasframe_t;
+
+typedef struct {
+    int         numframes;
+    trivertx_t  bboxmin;    // lightnormal isn't used
+    trivertx_t  bboxmax;    // lightnormal isn't used
+} daliasgroup_t;
+
+typedef struct {
+    float   interval;
+} daliasinterval_t;
+
+typedef struct maliasgroupframedesc_s {
+    trivertx_t          bboxmin;
+    trivertx_t          bboxmax;
+    int                 frame;
+} maliasgroupframedesc_t;
+
+typedef struct maliasgroup_s {
+    int numframes;
+    int intervals;
+    maliasgroupframedesc_t frames[1];
+} maliasgroup_t;
+
+typedef struct {
+    double          time;
+    qbool           allow_cheats;
+    qbool           allow_lumas;
+    float           max_watervis;   // how much water transparency we allow: 0..1 (reverse of alpha)
+    float           max_fbskins;    // max player skin brightness 0..1
+//  int             viewplayernum;  // don't draw own glow when gl_flashblend 1
+
+//  lightstyle_t    *lightstyles;
+} refdef2_t;
+
+typedef struct {
+    int index0;
+    int index1;
+} aedge_t;
 
 static aliashdr_t *paliashdr;
 static int r_anumverts;
@@ -820,6 +978,23 @@ float aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
 static finalvert_t fv[2][8];
 static auxvert_t av[8];
 static float r_nearclip = 1.0;
+static cache_system_t cache_head;
+static char loadname[32];
+static model_t *loadmodel;
+static vec3_t alias_forward, alias_right, alias_up;
+static float r_viewmodelsize;
+static vec3_t  vup, vright, vpn;
+static refdef2_t r_refdef2;
+static aedge_t  aedges[12] = {
+{0, 1}, {1, 2}, {2, 3}, {3, 0},
+{4, 5}, {5, 6}, {6, 7}, {7, 4},
+{0, 5}, {1, 4}, {2, 7}, {3, 6}
+};
+static float xscale, yscale;
+static float xcenter, ycenter;
+static float r_aliastransition, r_resfudge;
+static maliasskindesc_t *pskindesc;
+static int a_skinwidth;
 
 /* end of r_alias symbols */
 
@@ -1829,7 +2004,121 @@ Referenced by R_AliasClipTriangle().
         out->flags |= ALIAS_BOTTOM_CLIP;    
 }
 
+void R_Alias_clip_left (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
+/*
+Definition at line 106 of file r_aclip.c.
 
+References refdef_t::aliasvrect, r_refdef, finalvert_s::v, and vrect_s::x.
+
+Referenced by R_AliasClipTriangle().
+*/
+{
+    float       scale;
+    int         i;
+
+    if (pfv0->v[1] >= pfv1->v[1])
+    {
+        scale = (float)(r_refdef.aliasvrect.x - pfv0->v[0]) /
+                (pfv1->v[0] - pfv0->v[0]);
+        for (i=0 ; i<6 ; i++)
+            out->v[i] = pfv0->v[i] + (pfv1->v[i] - pfv0->v[i])*scale + 0.5;
+    }
+    else
+    {
+        scale = (float)(r_refdef.aliasvrect.x - pfv1->v[0]) /
+                (pfv0->v[0] - pfv1->v[0]);
+        for (i=0 ; i<6 ; i++)
+            out->v[i] = pfv1->v[i] + (pfv0->v[i] - pfv1->v[i])*scale + 0.5;
+    }
+}
+
+void R_Alias_clip_right (finalvert_t *pfv0, finalvert_t *pfv1,
+    finalvert_t *out)
+/*
+Definition at line 128 of file r_aclip.c.
+
+References refdef_t::aliasvrectright, r_refdef, and finalvert_s::v.
+
+Referenced by R_AliasClipTriangle().
+*/
+{
+    float       scale;
+    int         i;
+
+    if (pfv0->v[1] >= pfv1->v[1])
+    {
+        scale = (float)(r_refdef.aliasvrectright - pfv0->v[0]) /
+                (pfv1->v[0] - pfv0->v[0]);
+        for (i=0 ; i<6 ; i++)
+            out->v[i] = pfv0->v[i] + (pfv1->v[i] - pfv0->v[i])*scale + 0.5;
+    }
+    else
+    {
+        scale = (float)(r_refdef.aliasvrectright - pfv1->v[0]) /
+                (pfv0->v[0] - pfv1->v[0]);
+        for (i=0 ; i<6 ; i++)
+            out->v[i] = pfv1->v[i] + (pfv0->v[i] - pfv1->v[i])*scale + 0.5;
+    }
+}
+
+void R_Alias_clip_bottom (finalvert_t *pfv0, finalvert_t *pfv1,
+    finalvert_t *out)
+/*
+Definition at line 173 of file r_aclip.c.
+
+References refdef_t::aliasvrectbottom, r_refdef, and finalvert_s::v.
+
+Referenced by R_AliasClipTriangle().
+*/
+{
+    float       scale;
+    int         i;
+
+    if (pfv0->v[1] >= pfv1->v[1])
+    {
+        scale = (float)(r_refdef.aliasvrectbottom - pfv0->v[1]) /
+                (pfv1->v[1] - pfv0->v[1]);
+
+        for (i=0 ; i<6 ; i++)
+            out->v[i] = pfv0->v[i] + (pfv1->v[i] - pfv0->v[i])*scale + 0.5;
+    }
+    else
+    {
+        scale = (float)(r_refdef.aliasvrectbottom - pfv1->v[1]) /
+                (pfv0->v[1] - pfv1->v[1]);
+
+        for (i=0 ; i<6 ; i++)
+            out->v[i] = pfv1->v[i] + (pfv0->v[i] - pfv1->v[i])*scale + 0.5;
+    }
+}
+
+void R_Alias_clip_top (finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out)
+/*
+Definition at line 151 of file r_aclip.c.
+
+References refdef_t::aliasvrect, r_refdef, finalvert_s::v, and vrect_s::y.
+
+Referenced by R_AliasClipTriangle().
+*/
+{
+    float       scale;
+    int         i;
+
+    if (pfv0->v[1] >= pfv1->v[1])
+    {
+        scale = (float)(r_refdef.aliasvrect.y - pfv0->v[1]) /
+                (pfv1->v[1] - pfv0->v[1]);
+        for (i=0 ; i<6 ; i++)
+            out->v[i] = pfv0->v[i] + (pfv1->v[i] - pfv0->v[i])*scale + 0.5;
+    }
+    else
+    {
+        scale = (float)(r_refdef.aliasvrect.y - pfv1->v[1]) /
+                (pfv0->v[1] - pfv1->v[1]);
+        for (i=0 ; i<6 ; i++)
+            out->v[i] = pfv1->v[i] + (pfv0->v[i] - pfv1->v[i])*scale + 0.5;
+    }
+}
 
 static void R_AliasClipTriangle(mtriangle_t *ptri)
 /*
@@ -2016,6 +2305,91 @@ Referenced by R_AliasDrawModel().
     }
 }
 
+static void R_AliasTransformAndProjectFinalVerts (finalvert_t *fv, stvert_t *pstverts)
+/*
+Definition at line 412 of file r_alias.c.
+
+References aliastransform, aliasxcenter, aliasycenter, DotProduct, int, max, stvert_t::onseam, r_ambientlight, r_anumverts, r_apverts, r_avertexnormals, r_framelerp, r_oldapverts, r_plightvec, r_shadelight, stvert_t::s, stvert_t::t, and VectorInterpolate.
+
+Referenced by R_AliasPrepareUnclippedPoints().
+*/
+{
+    int i, temp;
+    float lightcos, zi;
+    trivertx_t *pverts1, *pverts2;
+    vec3_t interpolated_verts, interpolated_norm;
+
+    pverts1 = r_oldapverts;
+    pverts2 = r_apverts;
+
+    for (i = 0; i < r_anumverts; i++, fv++, pverts1++, pverts2++, pstverts++) {
+
+        VectorInterpolate(pverts1->v, r_framelerp, pverts2->v, interpolated_verts);
+        // transform and project
+        zi = 1.0 / (DotProduct(interpolated_verts, aliastransform[2]) + aliastransform[2][3]);
+
+        // x, y, and z are scaled down by 1/2**31 in the transform, so 1/z is
+        // scaled up by 1/2**31, and the scaling cancels out for x and y in the projection
+        fv->v[5] = zi;
+
+        fv->v[0] = ((DotProduct(interpolated_verts, aliastransform[0]) + aliastransform[0][3]) * zi) + aliasxcenter;
+        fv->v[1] = ((DotProduct(interpolated_verts, aliastransform[1]) + aliastransform[1][3]) * zi) + aliasycenter;
+
+        fv->v[2] = pstverts->s;
+        fv->v[3] = pstverts->t;
+        fv->flags = pstverts->onseam;
+
+        // lighting
+        VectorInterpolate(r_avertexnormals[pverts1->lightnormalindex], r_framelerp,
+            r_avertexnormals[pverts1->lightnormalindex], interpolated_norm);
+        lightcos = DotProduct (interpolated_norm, r_plightvec);
+        temp = r_ambientlight;
+
+
+        if (lightcos < 0) {
+            temp += (int) (r_shadelight * lightcos);
+            // clamp; because we limited the minimum ambient and shading light, we don't have to clamp low light, just bright
+            temp = max(temp, 0);
+        }
+
+        fv->v[4] = temp;
+    }
+}
+
+static void D_PolysetDrawFinalVerts (finalvert_t *fv, int numverts)
+/*
+Definition at line 157 of file d_polyse.c.
+
+References acolormap, d_scantable, d_viewbuffer, r_refdef, skintable, finalvert_s::v, refdef_t::vrectbottom, refdef_t::vrectright, and zspantable.
+
+Referenced by R_AliasPrepareUnclippedPoints().
+*/
+{
+    int     i, z;
+    short   *zbuf;
+
+    for (i=0 ; i<numverts ; i++, fv++)
+    {
+    // valid triangle coordinates for filling can include the bottom and
+    // right clip edges, due to the fill rule; these shouldn't be drawn
+        if ((fv->v[0] < r_refdef.vrectright) &&
+            (fv->v[1] < r_refdef.vrectbottom))
+        {
+            z = fv->v[5]>>16;
+            zbuf = zspantable[fv->v[1]] + fv->v[0];
+            if (z >= *zbuf)
+            {
+                int     pix;
+                
+                *zbuf = z;
+                pix = skintable[fv->v[3]>>16][fv->v[2]>>16];
+                pix = ((byte *)acolormap)[pix + (fv->v[4] & 0xFF00) ];
+                d_viewbuffer[d_scantable[fv->v[1]] + fv->v[0]] = pix;
+            }
+        }
+    }
+}
+
 static void R_AliasPrepareUnclippedPoints(void)
 /*
 Definition at line 466 of file r_alias.c.
@@ -2043,7 +2417,946 @@ Referenced by R_AliasDrawModel().
 }
 
 
-void R_AliasDrawModel(entity_t *ent)
+static void Cache_UnlinkLRU (cache_system_t *cs)
+/*
+Definition at line 312 of file zone.c.
+
+References cache_system_s::lru_next, cache_system_s::lru_prev, NULL, and Sys_Error().
+
+Referenced by Cache_Check(), and Cache_Free().
+*/
+{
+    if (!cs->lru_next || !cs->lru_prev)
+        Sys_Error ("Cache_UnlinkLRU: NULL link");
+
+    cs->lru_next->lru_prev = cs->lru_prev;
+    cs->lru_prev->lru_next = cs->lru_next;
+
+    cs->lru_prev = cs->lru_next = NULL;
+}
+
+static void Cache_MakeLRU (cache_system_t *cs)
+/*
+Definition at line 322 of file zone.c.
+
+References cache_head, cache_system_s::lru_next, cache_system_s::lru_prev, and Sys_Error().
+
+Referenced by Cache_Check(), and Cache_TryAlloc().
+*/
+{
+    if (cs->lru_next || cs->lru_prev)
+        Sys_Error ("Cache_MakeLRU: active link");
+
+    cache_head.lru_next->lru_prev = cs;
+    cs->lru_next = cache_head.lru_next;
+    cs->lru_prev = &cache_head;
+    cache_head.lru_next = cs;
+}
+
+static void *Cache_Check (cache_user_t *c)
+/*
+Definition at line 449 of file zone.c.
+
+References Cache_MakeLRU(), Cache_UnlinkLRU(), cache_user_s::data, and NULL.
+
+Referenced by Cache_Alloc(), Mod_Extradata(), Mod_LoadModel(), Mod_TouchModel(), S_LoadSound(), S_RawAudio(), S_RawClearStream(), S_SoundList_f(), and Skin_Cache().
+*/
+{
+    cache_system_t *cs;
+
+    if (!c->data)
+        return NULL;
+
+    cs = ((cache_system_t *)c->data) - 1;
+
+    // move to head of LRU
+    Cache_UnlinkLRU (cs);
+    Cache_MakeLRU (cs);
+
+    return c->data;
+}
+
+/* Unimplemented stub */
+static byte *FS_LoadTempFile (char *path, int *len) {
+    /* Loading File Data */
+    return NULL;
+}
+static int hunk_low_used = 0;
+static int Hunk_LowMark (void) {
+    return hunk_low_used;
+}
+void *Hunk_AllocName (int size, char *name)
+{
+	hunk_low_used += size;
+	return malloc(size);
+}
+
+#define LittleLong(x)	(x)
+#define LittleFloat(x)	(x)
+void * Mod_LoadAliasSkin (void * pin, int *pskinindex, int skinsize, aliashdr_t *pheader)
+/*
+Definition at line 1017 of file r_model.c.
+
+References Hunk_AllocName(), loadname, and pheader.
+
+Referenced by Mod_LoadAliasSkinGroup().
+*/
+{
+    byte *pskin, *pinskin;
+
+    pskin = (byte *) Hunk_AllocName (skinsize, loadname);
+    pinskin = (byte *)pin;
+    *pskinindex = (byte *)pskin - (byte *)pheader;
+
+    memcpy (pskin, pinskin, skinsize);
+
+    pinskin += skinsize;
+
+    return ((void *)pinskin);
+}
+
+
+void * Mod_LoadAliasSkinGroup (void * pin, int *pskinindex, int skinsize, aliashdr_t *pheader) {
+    daliasskingroup_t *pinskingroup;
+    maliasskingroup_t *paliasskingroup;
+    int i, numskins;
+    daliasskininterval_t *pinskinintervals;
+    float *poutskinintervals;
+    void *ptemp;
+
+    pinskingroup = (daliasskingroup_t *)pin;
+
+    numskins = LittleLong (pinskingroup->numskins);
+
+    paliasskingroup = (maliasskingroup_t *) Hunk_AllocName (sizeof (maliasskingroup_t) +
+            (numskins - 1) * sizeof (paliasskingroup->skindescs[0]), loadname);
+
+    paliasskingroup->numskins = numskins;
+
+    *pskinindex = (byte *)paliasskingroup - (byte *)pheader;
+
+    pinskinintervals = (daliasskininterval_t *)(pinskingroup + 1);
+
+    poutskinintervals = (float *) Hunk_AllocName (numskins * sizeof (float), loadname);
+
+    paliasskingroup->intervals = (byte *)poutskinintervals - (byte *)pheader;
+
+    for (i = 0; i < numskins; i++) {
+        *poutskinintervals = LittleFloat (pinskinintervals->interval);
+        if (*poutskinintervals <= 0)
+            Host_Error ("Mod_LoadAliasSkinGroup: interval<=0");
+
+        poutskinintervals++;
+        pinskinintervals++;
+    }
+
+    ptemp = (void *) pinskinintervals;
+
+    for (i = 0; i < numskins; i++)
+        ptemp = Mod_LoadAliasSkin (ptemp, &paliasskingroup->skindescs[i].skin, skinsize, pheader);
+
+    return ptemp;
+}
+
+void * Mod_LoadAliasFrame (void * pin, int *pframeindex, int numv,
+    trivertx_t *pbboxmin, trivertx_t *pbboxmax, aliashdr_t *pheader, char *name)
+/*
+Definition at line 926 of file r_model.c.
+
+References daliasframe_t::bboxmax, daliasframe_t::bboxmin, Hunk_AllocName(), trivertx_t::lightnormalindex, loadname, daliasframe_t::name, pheader, and trivertx_t::v.
+*/
+{
+    trivertx_t *pframe, *pinframe;
+    int  i, j;
+    daliasframe_t *pdaliasframe;
+
+    pdaliasframe = (daliasframe_t *)pin;
+
+    strcpy (name, pdaliasframe->name);
+
+    for (i = 0; i < 3; i++) {
+        // these are byte values, so we don't have to worry about endianness
+        pbboxmin->v[i] = pdaliasframe->bboxmin.v[i];
+        pbboxmax->v[i] = pdaliasframe->bboxmax.v[i];
+    }
+
+    pinframe = (trivertx_t *)(pdaliasframe + 1);
+    pframe = (trivertx_t *) Hunk_AllocName (numv * sizeof(*pframe), loadname);
+
+    *pframeindex = (byte *)pframe - (byte *)pheader;
+
+    for (j = 0; j < numv; j++) {
+        int     k;
+
+        // these are all byte values, so no need to deal with endianness
+        pframe[j].lightnormalindex = pinframe[j].lightnormalindex;
+
+        for (k = 0; k < 3; k++)
+            pframe[j].v[k] = pinframe[j].v[k];
+    }
+
+    pinframe += numv;
+    return pinframe;
+}
+
+void * Mod_LoadAliasGroup (void * pin, int *pframeindex, int numv,
+    trivertx_t *pbboxmin, trivertx_t *pbboxmax, aliashdr_t *pheader, char *name)
+/*
+Definition at line 962 of file r_model.c.
+
+References maliasgroupframedesc_s::bboxmax, daliasgroup_t::bboxmax, maliasgroupframedesc_s::bboxmin, daliasgroup_t::bboxmin, maliasgroupframedesc_s::frame, maliasgroup_s::frames, Host_Error(), Hunk_AllocName(), daliasinterval_t::interval, maliasgroup_s::intervals, loadname, Mod_LoadAliasFrame(), maliasgroup_s::numframes, daliasgroup_t::numframes, pheader, and trivertx_t::v.
+*/
+{
+    daliasgroup_t *pingroup;
+    maliasgroup_t *paliasgroup;
+    int i, numframes;
+    daliasinterval_t *pin_intervals;
+    float *poutintervals;
+    void *ptemp;
+
+    pingroup = (daliasgroup_t *)pin;
+
+    numframes = LittleLong (pingroup->numframes);
+
+    paliasgroup = (maliasgroup_t *) Hunk_AllocName (sizeof (maliasgroup_t) +
+            (numframes - 1) * sizeof (paliasgroup->frames[0]), loadname);
+
+    paliasgroup->numframes = numframes;
+
+    for (i = 0; i < 3; i++) {
+        // these are byte values, so we don't have to worry about endianness
+        pbboxmin->v[i] = pingroup->bboxmin.v[i];
+        pbboxmax->v[i] = pingroup->bboxmax.v[i];
+    }
+
+    *pframeindex = (byte *)paliasgroup - (byte *)pheader;
+
+    pin_intervals = (daliasinterval_t *)(pingroup + 1);
+
+    poutintervals = (float *) Hunk_AllocName (numframes * sizeof (float), loadname);
+
+    paliasgroup->intervals = (byte *)poutintervals - (byte *)pheader;
+
+    for (i = 0 ; i < numframes; i++) {
+        *poutintervals = LittleFloat (pin_intervals->interval);
+        if (*poutintervals <= 0.0)
+            Host_Error ("Mod_LoadAliasGroup: interval<=0");
+
+        poutintervals++;
+        pin_intervals++;
+    }
+
+    ptemp = (void *)pin_intervals;
+
+    for (i = 0; i < numframes; i++) {
+        ptemp = Mod_LoadAliasFrame (ptemp,
+                                    &paliasgroup->frames[i].frame,
+                                    numv,
+                                    &paliasgroup->frames[i].bboxmin,
+                                    &paliasgroup->frames[i].bboxmax,
+                                    pheader, name);
+    }
+    return ptemp;
+}
+
+
+
+static void Mod_LoadAliasModel (model_t *mod, void *buffer, int filesize)
+/* No doxygen information */
+{
+    int i, j, version, numframes, numskins, size, skinsize /*,start, end, total */;
+    mdl_t *pmodel, *pinmodel;
+    stvert_t *pstverts, *pinstverts;
+    aliashdr_t *pheader;
+    mtriangle_t *ptri;
+    dtriangle_t *pintriangles;
+    daliasframetype_t *pframetype;
+    daliasskintype_t *pskintype;
+    maliasskindesc_t *pskindesc;
+    
+    // some models are special
+    if(!strcmp(mod->name, "progs/player.mdl"))
+        mod->modhint = MOD_PLAYER;
+    else if(!strcmp(mod->name, "progs/eyes.mdl"))
+        mod->modhint = MOD_EYES;
+    else if (!strcmp(mod->name, "progs/flame.mdl") ||
+        !strcmp(mod->name, "progs/flame2.mdl"))
+        mod->modhint = MOD_FLAME;
+    else if (!strcmp(mod->name, "progs/backpack.mdl"))
+        mod->modhint = MOD_BACKPACK;
+    else if (!strcmp(mod->name, "progs/e_spike1.mdl"))
+        mod->modhint = MOD_RAIL;
+    else if (!strcmp(mod->name, "progs/dgib.mdl") ||
+        !strcmp(mod->name, "progs/dgib2.mdl") ||
+        !strcmp(mod->name, "progs/dgib3.mdl") ||
+        !strcmp(mod->name, "progs/tesgib1.mdl") ||
+        !strcmp(mod->name, "progs/tesgib2.mdl") ||
+        !strcmp(mod->name, "progs/tesgib3.mdl") ||
+        !strcmp(mod->name, "progs/tesgib4.mdl") ||
+        !strcmp(mod->name, "progs/tgib1.mdl") ||
+        !strcmp(mod->name, "progs/tgib2.mdl") ||
+        !strcmp(mod->name, "progs/tgib3.mdl"))
+        mod->modhint = MOD_BUILDINGGIBS;
+
+/*
+    if (mod->modhint == MOD_PLAYER || mod->modhint == MOD_EYES)
+        mod->crc = CRC_Block (buffer, filesize);
+
+    start = Hunk_LowMark ();
+*/
+
+    pinmodel = (mdl_t *) buffer;
+
+    version = LittleLong (pinmodel->version);
+    if (version != ALIAS_VERSION)
+        Host_Error ("Mod_LoadAliasModel: %s has wrong version number (%i should be %i)", mod->name, version, ALIAS_VERSION);
+
+    // allocate space for a working header, plus all the data except the frames, skin and group info
+    size =  sizeof (aliashdr_t) + (LittleLong (pinmodel->numframes) - 1) *
+             sizeof (pheader->frames[0]) +
+            sizeof (mdl_t) +
+            LittleLong (pinmodel->numverts) * sizeof (stvert_t) +
+            LittleLong (pinmodel->numtris) * sizeof (mtriangle_t);
+
+    pheader = (aliashdr_t *) Hunk_AllocName (size, loadname);
+    pmodel = (mdl_t *) ((byte *)&pheader[1] +
+            (LittleLong (pinmodel->numframes) - 1) *
+             sizeof (pheader->frames[0]));
+    
+    //  mod->cache.data = pheader;
+    mod->flags = LittleLong (pinmodel->flags);
+
+    // endian-adjust and copy the data, starting with the alias model header
+    pmodel->boundingradius = LittleFloat (pinmodel->boundingradius);
+    pmodel->numskins = LittleLong (pinmodel->numskins);
+    pmodel->skinwidth = LittleLong (pinmodel->skinwidth);
+    pmodel->skinheight = LittleLong (pinmodel->skinheight);
+
+    if (pmodel->skinheight > MAX_LBM_HEIGHT)
+        Host_Error ("Mod_LoadAliasModel: model %s has a skin taller than %d", mod->name, MAX_LBM_HEIGHT);
+
+    pmodel->numverts = LittleLong (pinmodel->numverts);
+
+    if (pmodel->numverts <= 0)
+        Host_Error ("Mod_LoadAliasModel: model %s has no vertices", mod->name);
+
+    if (pmodel->numverts > MAXALIASVERTS)
+        Host_Error ("Mod_LoadAliasModel: model %s has too many vertices", mod->name);
+
+    pmodel->numtris = LittleLong (pinmodel->numtris);
+
+    if (pmodel->numtris <= 0)
+        Host_Error ("Mod_LoadAliasModel: model %s has no triangles", mod->name);
+
+    pmodel->numframes = LittleLong (pinmodel->numframes);
+    pmodel->size = LittleFloat (pinmodel->size) * ALIAS_BASE_SIZE_RATIO;
+    mod->synctype = LittleLong (pinmodel->synctype);
+    mod->numframes = pmodel->numframes;
+
+    for (i = 0; i < 3; i++) {
+        pmodel->scale[i] = LittleFloat (pinmodel->scale[i]);
+        pmodel->scale_origin[i] = LittleFloat (pinmodel->scale_origin[i]);
+        pmodel->eyeposition[i] = LittleFloat (pinmodel->eyeposition[i]);
+    }
+
+    numskins = pmodel->numskins;
+    numframes = pmodel->numframes;
+
+    if (pmodel->skinwidth & 0x03)
+        Host_Error ("Mod_LoadAliasModel: skinwidth not multiple of 4");
+
+    pheader->model = (byte *) pmodel - (byte *)pheader;
+
+    // load the skins
+    skinsize = pmodel->skinheight * pmodel->skinwidth;
+
+    if (numskins < 1)
+        Host_Error ("Mod_LoadAliasModel: Invalid # of skins: %d\n", numskins);
+
+    pskintype = (daliasskintype_t *)&pinmodel[1];
+
+    pskindesc = (maliasskindesc_t *) Hunk_AllocName (numskins * sizeof (maliasskindesc_t),
+                                loadname);
+
+    pheader->skindesc = (byte *) pskindesc - (byte *)pheader;
+
+    for (i = 0; i < numskins; i++) {
+        aliasskintype_t skintype;
+
+        skintype = LittleLong (pskintype->type);
+        pskindesc[i].type = skintype;
+
+        if (skintype == ALIAS_SKIN_SINGLE)
+            pskintype = (daliasskintype_t *) Mod_LoadAliasSkin (pskintype + 1, &pskindesc[i].skin, skinsize, pheader);
+        else
+            pskintype = (daliasskintype_t *) Mod_LoadAliasSkinGroup (pskintype + 1, &pskindesc[i].skin, skinsize, pheader);
+    }
+
+    // set base s and t vertices
+    pstverts = (stvert_t *)&pmodel[1];
+    pinstverts = (stvert_t *)pskintype;
+
+    pheader->stverts = (byte *)pstverts - (byte *)pheader;
+
+    for (i = 0 ; i < pmodel->numverts; i++) {
+        pstverts[i].onseam = LittleLong (pinstverts[i].onseam);
+        // put s and t in 16.16 format
+        pstverts[i].s = LittleLong (pinstverts[i].s) << 16;
+        pstverts[i].t = LittleLong (pinstverts[i].t) << 16;
+    }
+
+    // set up the triangles
+    ptri = (mtriangle_t *)&pstverts[pmodel->numverts];
+    pintriangles = (dtriangle_t *)&pinstverts[pmodel->numverts];
+
+    pheader->triangles = (byte *)ptri - (byte *)pheader;
+
+    for (i = 0; i < pmodel->numtris; i++) {
+        ptri[i].facesfront = LittleLong (pintriangles[i].facesfront);
+
+        for (j = 0; j < 3; j++)
+            ptri[i].vertindex[j] = LittleLong (pintriangles[i].vertindex[j]);
+    }
+
+    // load the frames
+    if (numframes < 1)
+        Host_Error ("Mod_LoadAliasModel: Invalid # of frames: %d\n", numframes);
+
+    pframetype = (daliasframetype_t *)&pintriangles[pmodel->numtris];
+
+    for (i = 0; i < numframes; i++) {
+        aliasframetype_t    frametype;
+
+        frametype = LittleLong (pframetype->type);
+        pheader->frames[i].type = frametype;
+
+
+        if (frametype == ALIAS_SINGLE) {
+            pframetype = (daliasframetype_t *)
+                    Mod_LoadAliasFrame (pframetype + 1,
+                                        &pheader->frames[i].frame,
+                                        pmodel->numverts,
+                                        &pheader->frames[i].bboxmin,
+                                        &pheader->frames[i].bboxmax,
+                                        pheader, pheader->frames[i].name);
+        } else {
+            pframetype = (daliasframetype_t *)
+                    Mod_LoadAliasGroup (pframetype + 1,
+                                        &pheader->frames[i].frame,
+                                        pmodel->numverts,
+                                        &pheader->frames[i].bboxmin,
+                                        &pheader->frames[i].bboxmax,
+                                        pheader, pheader->frames[i].name);
+        }
+    }
+
+    mod->type = mod_alias;
+
+    // FIXME: do this right
+    mod->mins[0] = mod->mins[1] = mod->mins[2] = -16;
+    mod->maxs[0] = mod->maxs[1] = mod->maxs[2] = 16;
+
+    // move the complete, relocatable alias model to the cache
+#if 0
+    end = Hunk_LowMark ();
+    total = end - start;
+    
+    Cache_Alloc (&mod->cache, total, loadname);
+    if (!mod->cache.data)
+        return;
+    memcpy (mod->cache.data, pheader, total);
+
+    Hunk_FreeToLowMark (start);
+#endif
+}
+
+
+//Loads a model into the cache
+model_t *Mod_LoadModel (model_t *mod, qbool crash)
+/*
+No doxygen info for this function
+*/
+{
+    void *d;
+    unsigned *buf;
+    int filesize;
+
+
+    if (!mod->needload) {
+        if (mod->type == mod_alias) {
+            d = Cache_Check (&mod->cache);
+            if (d)
+                return mod;
+        } else {
+            return mod; // not cached at all
+        }
+    }
+
+    // because the world is so huge, load it one piece at a time
+
+    // load the file
+    buf = (unsigned *) FS_LoadTempFile (mod->name, &filesize);
+    if (!buf) {
+        if (crash)
+            Host_Error ("Mod_LoadModel: %s not found", mod->name);
+        return NULL;
+    }
+
+    // allocate a new model
+    COM_FileBase (mod->name, loadname);
+    loadmodel = mod;
+    /* FMod_CheckModel(mod->name, buf, filesize); */
+
+    // call the apropriate loader
+    mod->needload = false;
+    mod->modhint = 0;
+
+    switch (LittleLong(*(unsigned *)buf)) {
+    case IDPOLYHEADER:
+        Mod_LoadAliasModel (mod, buf, filesize);
+        break;
+#if 0
+    case IDSPRITEHEADER:
+        Mod_LoadSpriteModel (mod, buf);
+        break;
+    default:
+        Mod_LoadBrushModel (mod, buf);
+        break;
+#endif
+    }
+
+    return mod;
+}
+
+
+static void *Mod_Extradata (model_t *mod)
+/*
+Definition at line 54 of file r_model.c.
+
+References model_s::cache, Cache_Check(), cache_user_s::data, Mod_LoadModel(), and Sys_Error().
+*/
+{
+    void *r;
+
+    if ((r = Cache_Check (&mod->cache)))
+        return r;
+
+    Mod_LoadModel (mod, true);
+
+    if (!mod->cache.data)
+        Sys_Error ("Mod_Extradata: caching failed");
+
+    return mod->cache.data;
+}
+
+#define DEG2RAD(a) (((a) * M_PI) / 180.0F)
+
+void AngleVectors (vec3_t angles, vec3_t forward, vec3_t right, vec3_t up)
+/*
+Definition at line 148 of file mathlib.c.
+
+References DEG2RAD, PITCH, ROLL, and YAW.
+
+Referenced by CameraRandomPoint(), CameraUpdate(), CL_AddFlagModels(), CL_LinkPacketEntities(), CL_MuzzleFlash(), CL_PredictMove(), CL_UpdateBeams(), DrawMuzzleflash(), FireballTrailWave(), FuelRodGunTrail(), InfernoFire_f(), InitFlyby(), NQD_LinkEntities(), PF_makevectors(), PM_PlayerMove(), QMB_DetpackExplosion(), QMB_TeleportSplash(), R_AliasSetUpTransform(), R_DrawBrushModel(), R_DrawSprite(), R_DrawSpriteModel(), R_DrawTrySimpleItem(), R_SetupFrame(), TP_FindPoint(), V_AddViewWeapon(), V_CalcRefdef(), V_CalcRoll(), V_ParseDamage(), VX_DetpackExplosion(), VXGunshot(), VXNailhit(), and VXTeleport().
+*/
+{
+    float angle, sr, sp, sy, cr, cp, cy, temp;
+
+    if (angles[YAW]) {
+        angle = DEG2RAD(angles[YAW]);
+        sy = sin(angle);
+        cy = cos(angle);
+    } else {
+        sy = 0;
+        cy = 1;
+    }
+
+    if (angles[PITCH]) {
+        angle = DEG2RAD(angles[PITCH]);
+        sp = sin(angle);
+        cp = cos(angle);
+    } else {
+        sp = 0;
+        cp = 1;
+    }
+
+    if (forward) {
+        forward[0] = cp * cy;
+        forward[1] = cp * sy;
+        forward[2] = -sp;
+    }
+
+    if (right || up) {
+        
+        if (angles[ROLL]) {
+            angle = DEG2RAD(angles[ROLL]);
+            sr = sin(angle);
+            cr = cos(angle);
+
+            if (right) {
+                temp = sr * sp;
+                right[0] = -1 * temp * cy + cr * sy;
+                right[1] = -1 * temp * sy - cr * cy;
+                right[2] = -1 * sr * cp;
+            }
+
+            if (up) {
+                temp = cr * sp;
+                up[0] = (temp * cy + sr * sy);
+                up[1] = (temp * sy - sr * cy);
+                up[2] = cr * cp;
+            }
+        } else {
+            if (right) {
+                right[0] = sy;
+                right[1] = -cy;
+                right[2] = 0;
+            }
+
+            if (up) {
+                up[0] = sp * cy ;
+                up[1] = sp * sy;
+                up[2] = cp;
+            }
+        }
+    }
+}
+
+void R_ConcatTransforms (float in1[3][4], float in2[3][4], float out[3][4])
+/*
+Definition at line 279 of file mathlib.c.
+
+Referenced by R_AliasSetUpTransform().
+*/
+{
+    out[0][0] = in1[0][0] * in2[0][0] + in1[0][1] * in2[1][0] + in1[0][2] * in2[2][0];
+    out[0][1] = in1[0][0] * in2[0][1] + in1[0][1] * in2[1][1] + in1[0][2] * in2[2][1];
+    out[0][2] = in1[0][0] * in2[0][2] + in1[0][1] * in2[1][2] + in1[0][2] * in2[2][2];
+    out[0][3] = in1[0][0] * in2[0][3] + in1[0][1] * in2[1][3] + in1[0][2] * in2[2][3] + in1[0][3];
+    out[1][0] = in1[1][0] * in2[0][0] + in1[1][1] * in2[1][0] + in1[1][2] * in2[2][0];
+    out[1][1] = in1[1][0] * in2[0][1] + in1[1][1] * in2[1][1] + in1[1][2] * in2[2][1];
+    out[1][2] = in1[1][0] * in2[0][2] + in1[1][1] * in2[1][2] + in1[1][2] * in2[2][2];
+    out[1][3] = in1[1][0] * in2[0][3] + in1[1][1] * in2[1][3] + in1[1][2] * in2[2][3] + in1[1][3];
+    out[2][0] = in1[2][0] * in2[0][0] + in1[2][1] * in2[1][0] + in1[2][2] * in2[2][0];
+    out[2][1] = in1[2][0] * in2[0][1] + in1[2][1] * in2[1][1] + in1[2][2] * in2[2][1];
+    out[2][2] = in1[2][0] * in2[0][2] + in1[2][1] * in2[1][2] + in1[2][2] * in2[2][2];
+    out[2][3] = in1[2][0] * in2[0][3] + in1[2][1] * in2[1][3] + in1[2][2] * in2[2][3] + in1[2][3];
+}
+
+
+
+
+void R_AliasSetUpTransform (int trivial_accept)
+/*
+Definition at line 122 of file r_alias.c.
+
+References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP, ALIAS_XY_CLIP_MASK, ALIAS_Z_CLIP, finalvert_s::flags, entity_s::frame, auxvert_t::fv, fv, refdef_t::fvrectbottom, refdef_t::fvrectright, refdef_t::fvrectx, refdef_t::fvrecty, aedge_t::index0, max, min, entity_s::oldframe, R_AliasCheckBBoxFrame(), R_AliasSetUpTransform(), R_AliasTransformVector, r_aliastransition, r_framelerp, r_nearclip, r_refdef, r_resfudge, mdl_t::size, entity_s::trivial_accept, trivertx_t::v, cvar_s::value, xcenter, xscale, ycenter, and yscale.
+
+*/
+{
+    int i;
+    float scale, rotationmatrix[3][4], t2matrix[3][4];
+    vec3_t angles;
+    static float tmatrix[3][4], viewmatrix[3][4];
+
+    // TODO: should really be stored with the entity instead of being reconstructed
+    // TODO: should use a look-up table
+    // TODO: could cache lazily, stored in the entity
+
+    angles[ROLL] = currententity->angles[ROLL];
+    angles[PITCH] = -currententity->angles[PITCH];
+    angles[YAW] = currententity->angles[YAW];
+    AngleVectors (angles, alias_forward, alias_right, alias_up);
+
+    tmatrix[0][0] = pmdl->scale[0];
+    tmatrix[1][1] = pmdl->scale[1];
+    tmatrix[2][2] = pmdl->scale[2];
+
+    if ((currententity->renderfx & RF_WEAPONMODEL)) {       
+        scale = 0.5 + bound(0, r_viewmodelsize, 1) / 2; 
+        tmatrix[0][0] *= scale;
+    }
+
+    tmatrix[0][3] = pmdl->scale_origin[0];
+    tmatrix[1][3] = pmdl->scale_origin[1];
+    tmatrix[2][3] = pmdl->scale_origin[2];
+
+    // TODO: can do this with simple matrix rearrangement
+    for (i = 0; i < 3; i++) {
+        t2matrix[i][0] = alias_forward[i];
+        t2matrix[i][1] = -alias_right[i];
+        t2matrix[i][2] = alias_up[i];
+    }
+
+    t2matrix[0][3] = -modelorg[0];
+    t2matrix[1][3] = -modelorg[1];
+    t2matrix[2][3] = -modelorg[2];
+
+    // FIXME: can do more efficiently than full concatenation
+    R_ConcatTransforms (t2matrix, tmatrix, rotationmatrix);
+
+    // TODO: should be global, set when vright, etc., set
+    VectorCopy (vright, viewmatrix[0]);
+    VectorNegate (vup, viewmatrix[1]);
+    VectorCopy (vpn, viewmatrix[2]);
+
+    R_ConcatTransforms (viewmatrix, rotationmatrix, aliastransform);
+
+    // do the scaling up of x and y to screen coordinates as part of the transform
+    // for the unclipped case (it would mess up clipping in the clipped case).
+    // Also scale down z, so 1/z is scaled 31 bits for free, and scale down x and y
+    // correspondingly so the projected x and y come out right
+    // FIXME: make this work for clipped case too?
+    if (trivial_accept) {
+        for (i = 0; i < 4; i++) {
+            aliastransform[0][i] *= aliasxscale * (1.0 / ((float) 0x8000 * 0x10000));
+            aliastransform[1][i] *= aliasyscale * (1.0 / ((float) 0x8000 * 0x10000));
+            aliastransform[2][i] *= 1.0 / ((float) 0x8000 * 0x10000);
+
+        }
+    }
+}
+
+void R_AliasCheckBBoxFrame (int frame, trivertx_t **mins, trivertx_t **maxs)
+/*
+Definition at line 95 of file r_alias.c.
+
+References ALIAS_SINGLE, maliasgroupframedesc_s::bboxmax, maliasframedesc_s::bboxmax, maliasgroupframedesc_s::bboxmin, maliasframedesc_s::bboxmin, maliasframedesc_s::frame, maliasgroup_s::frames, aliashdr_s::frames, int, maliasgroup_s::intervals, maliasgroup_s::numframes, r_refdef2, refdef2_t::time, and maliasframedesc_s::type.
+
+Referenced by R_AliasCheckBBox().
+*/
+{
+    int i, numframes;
+    maliasgroup_t *paliasgroup;
+    float *pintervals, fullinterval, targettime;
+
+    if (paliashdr->frames[frame].type == ALIAS_SINGLE) {
+        *mins = &paliashdr->frames[frame].bboxmin;
+        *maxs = &paliashdr->frames[frame].bboxmax;
+    } else {
+        paliasgroup = (maliasgroup_t *) ((byte *) paliashdr + paliashdr->frames[frame].frame);
+        pintervals = (float *) ((byte *) paliashdr + paliasgroup->intervals);
+        numframes = paliasgroup->numframes;
+        fullinterval = pintervals[numframes - 1];
+
+        // when loading in Mod_LoadAliasGroup, we guaranteed all interval values
+        // are positive, so we don't have to worry about division by 0
+        targettime = r_refdef2.time - ((int) (r_refdef2.time / fullinterval)) * fullinterval;
+
+        for (i = 0; i < numframes - 1; i++) {
+            if (pintervals[i] > targettime)
+                break;
+        }
+        *mins = &paliasgroup->frames[i].bboxmin;
+        *maxs = &paliasgroup->frames[i].bboxmax;
+    }
+}
+
+qbool R_AliasCheckBBox (entity_t *ent)
+/*
+Definition at line 122 of file r_alias.c.
+
+References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP, ALIAS_XY_CLIP_MASK, ALIAS_Z_CLIP, finalvert_s::flags, entity_s::frame, auxvert_t::fv, fv, refdef_t::fvrectbottom, refdef_t::fvrectright, refdef_t::fvrectx, refdef_t::fvrecty, aedge_t::index0, max, min, entity_s::oldframe, R_AliasCheckBBoxFrame(), R_AliasSetUpTransform(), R_AliasTransformVector, r_aliastransition, r_framelerp, r_nearclip, r_refdef, r_resfudge, mdl_t::size, entity_s::trivial_accept, trivertx_t::v, cvar_s::value, xcenter, xscale, ycenter, and yscale.
+
+Referenced by R_AliasDrawModel().
+*/
+{
+    int i, flags, numv, minz;
+    float zi, basepts[8][3], v0, v1, frac;
+    finalvert_t *pv0, *pv1, viewpts[16];
+    auxvert_t *pa0, *pa1, viewaux[16];
+    qbool zclipped, zfullyclipped;
+    unsigned anyclip, allclip;
+    trivertx_t *mins, *maxs, *oldmins, *oldmaxs;
+
+    ent->trivial_accept = 0;
+
+    // expand, rotate, and translate points into worldspace
+    R_AliasSetUpTransform (0);
+
+    // construct the base bounding box for this frame
+    if (r_framelerp == 1) {
+        R_AliasCheckBBoxFrame (ent->frame, &mins, &maxs);
+
+        // x worldspace coordinates
+        basepts[0][0] = basepts[1][0] = basepts[2][0] = basepts[3][0] = (float) mins->v[0];
+        basepts[4][0] = basepts[5][0] = basepts[6][0] = basepts[7][0] = (float) maxs->v[0];
+        // y worldspace coordinates
+        basepts[0][1] = basepts[3][1] = basepts[5][1] = basepts[6][1] = (float) mins->v[1];
+        basepts[1][1] = basepts[2][1] = basepts[4][1] = basepts[7][1] = (float) maxs->v[1];
+        // z worldspace coordinates
+        basepts[0][2] = basepts[1][2] = basepts[4][2] = basepts[5][2] = (float) mins->v[2];
+        basepts[2][2] = basepts[3][2] = basepts[6][2] = basepts[7][2] = (float) maxs->v[2];
+    } else {
+        R_AliasCheckBBoxFrame (ent->oldframe, &oldmins, &oldmaxs);
+        R_AliasCheckBBoxFrame (ent->frame, &mins, &maxs);
+
+        // x worldspace coordinates
+        basepts[0][0] = basepts[1][0] = basepts[2][0] = basepts[3][0] = (float) min(mins->v[0], oldmins->v[0]);
+        basepts[4][0] = basepts[5][0] = basepts[6][0] = basepts[7][0] = (float) max(maxs->v[0], oldmaxs->v[0]);
+        // y worldspace coordinates
+        basepts[0][1] = basepts[3][1] = basepts[5][1] = basepts[6][1] = (float) min(mins->v[1], oldmins->v[1]);
+        basepts[1][1] = basepts[2][1] = basepts[4][1] = basepts[7][1] = (float) max(maxs->v[1], oldmaxs->v[1]);
+        // z worldspace coordinates
+        basepts[0][2] = basepts[1][2] = basepts[4][2] = basepts[5][2] = (float) min(mins->v[2], oldmins->v[2]);
+        basepts[2][2] = basepts[3][2] = basepts[6][2] = basepts[7][2] = (float) max(maxs->v[2], oldmaxs->v[2]);
+    }
+
+    zclipped = false;
+    zfullyclipped = true;
+
+    minz = 9999;
+    for (i = 0; i < 8; i++) {
+        R_AliasTransformVector  (&basepts[i][0], &viewaux[i].fv[0]);
+
+        if (viewaux[i].fv[2] < r_nearclip) {
+            // we must clip points that are closer than the near clip plane
+            viewpts[i].flags = ALIAS_Z_CLIP;
+            zclipped = true;
+        } else {
+            if (viewaux[i].fv[2] < minz)
+                minz = viewaux[i].fv[2];
+            viewpts[i].flags = 0;
+            zfullyclipped = false;
+        }
+    }
+
+    if (zfullyclipped)
+        return false;   // everything was near-z-clipped
+
+    numv = 8;
+
+    if (zclipped) {
+        // organize points by edges, use edges to get new points (possible trivial reject)
+        for (i = 0; i < 12; i++) {
+            // edge endpoints
+            pv0 = &viewpts[aedges[i].index0];
+            pv1 = &viewpts[aedges[i].index1];
+            pa0 = &viewaux[aedges[i].index0];
+            pa1 = &viewaux[aedges[i].index1];
+
+            // if one end is clipped and the other isn't, make a new point
+            if (pv0->flags ^ pv1->flags) {
+                frac = (r_nearclip - pa0->fv[2]) / (pa1->fv[2] - pa0->fv[2]);
+                viewaux[numv].fv[0] = pa0->fv[0] + (pa1->fv[0] - pa0->fv[0]) * frac;
+                viewaux[numv].fv[1] = pa0->fv[1] + (pa1->fv[1] - pa0->fv[1]) * frac;
+                viewaux[numv].fv[2] = r_nearclip;
+                viewpts[numv].flags = 0;
+                numv++;
+            }
+        }
+    }
+
+    // project the vertices that remain after clipping
+    anyclip = 0;
+    allclip = ALIAS_XY_CLIP_MASK;
+
+    // TODO: probably should do this loop in ASM, especially if we use floats
+    for (i = 0; i < numv; i++) {
+        // we don't need to bother with vertices that were z-clipped
+        if (viewpts[i].flags & ALIAS_Z_CLIP)
+            continue;
+
+        zi = 1.0 / viewaux[i].fv[2];
+
+        // FIXME: do with chop mode in ASM, or convert to float
+        v0 = (viewaux[i].fv[0] * xscale * zi) + xcenter;
+        v1 = (viewaux[i].fv[1] * yscale * zi) + ycenter;
+
+        flags = 0;
+
+        if (v0 < r_refdef.fvrectx)
+            flags |= ALIAS_LEFT_CLIP;
+        if (v1 < r_refdef.fvrecty)
+            flags |= ALIAS_TOP_CLIP;
+        if (v0 > r_refdef.fvrectright)
+            flags |= ALIAS_RIGHT_CLIP;
+        if (v1 > r_refdef.fvrectbottom)
+            flags |= ALIAS_BOTTOM_CLIP;
+
+        anyclip |= flags;
+        allclip &= flags;
+    }
+
+    if (allclip)
+        return false;   // trivial reject off one side
+
+    ent->trivial_accept = !anyclip & !zclipped;
+
+    if (ent->trivial_accept) {
+        if (minz > (r_aliastransition + (pmdl->size * r_resfudge)))
+            ent->trivial_accept |= 2;
+    }
+
+    return true;
+}
+
+void R_AliasSetupSkin (entity_t *ent)
+/*
+Definition at line 484 of file r_alias.c.
+
+References a_skinwidth, ALIAS_SKIN_GROUP, Com_DPrintf(), int, maliasskingroup_s::intervals, maliasskingroup_s::numskins, mdl_t::numskins, numskins, affinetridesc_t::pskin, pskindesc, affinetridesc_t::pskindesc, r_refdef2, entity_s::scoreboard, affinetridesc_t::seamfixupX16, player_info_s::skin, maliasskindesc_t::skin, Skin_Cache(), Skin_Find(), aliashdr_s::skindesc, maliasskingroup_s::skindescs, mdl_t::skinheight, affinetridesc_t::skinheight, entity_s::skinnum, affinetridesc_t::skinwidth, mdl_t::skinwidth, refdef2_t::time, and maliasskindesc_t::type.
+
+Referenced by R_AliasDrawModel().
+*/
+{
+    /* byte *base; */
+    int skinnum, i, numskins;
+    maliasskingroup_t *paliasskingroup;
+    float *pskinintervals, fullskininterval, skintargettime, skintime;
+
+    skinnum = ent->skinnum;
+    if (skinnum >= pmdl->numskins || skinnum < 0) {
+        Com_DPrintf ("R_AliasSetupSkin: no such skin # %d\n", skinnum);
+        skinnum = 0;
+    }
+
+    pskindesc = ((maliasskindesc_t *) ((byte *) paliashdr + paliashdr->skindesc)) + skinnum;
+    a_skinwidth = pmdl->skinwidth;
+
+    if (pskindesc->type == ALIAS_SKIN_GROUP) {
+        paliasskingroup = (maliasskingroup_t *) ((byte *) paliashdr + pskindesc->skin);
+        pskinintervals = (float *) ((byte *) paliashdr + paliasskingroup->intervals);
+        numskins = paliasskingroup->numskins;
+        fullskininterval = pskinintervals[numskins - 1];
+    
+        skintime = r_refdef2.time;
+    
+        // when loading in Mod_LoadAliasSkinGroup, we guaranteed all interval
+        // values are positive, so we don't have to worry about division by 0
+        skintargettime = skintime - ((int) (skintime / fullskininterval)) * fullskininterval;
+    
+        for (i = 0; i < numskins - 1; i++) {
+            if (pskinintervals[i] > skintargettime)
+                break;
+        }
+
+        pskindesc = &paliasskingroup->skindescs[i];
+    }
+
+    r_affinetridesc.pskindesc = pskindesc;
+    r_affinetridesc.pskin = (void *)((byte *)paliashdr + pskindesc->skin);
+    r_affinetridesc.skinwidth = a_skinwidth;
+    r_affinetridesc.seamfixupX16 =  (a_skinwidth >> 1) << 16;
+    r_affinetridesc.skinheight = pmdl->skinheight;
+
+/* Skin stuff not yet */
+
+#if 0
+    if (ent->scoreboard) {
+        if (!ent->scoreboard->skin)
+            Skin_Find (ent->scoreboard);
+        base = Skin_Cache (ent->scoreboard->skin, false);
+        if (base) {
+            r_affinetridesc.pskin = base;
+            r_affinetridesc.skinwidth = 320;
+            r_affinetridesc.skinheight = 200;
+        }
+    }
+#endif
+}
+
+static void R_AliasDrawModel(entity_t *ent)
 /*
 Definition at line 629 of file r_alias.c.
 
