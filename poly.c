@@ -329,6 +329,7 @@ static adivtab_t adivtab[32*32] = {
 #define MAXALIASVERTS	2000    // TODO: tune this
 #define RF_WEAPONMODEL	1
 #define RF_LIMITLERP	4
+#define RF_PLAYERMODEL	8
 #define MAX_QPATH	64
 #define	MAX_MAP_HULLS	4
 #define MIPLEVELS	4
@@ -345,6 +346,7 @@ static adivtab_t adivtab[32*32] = {
 
 #define VectorSubtract(a,b,c)   ((c)[0] = (a)[0] - (b)[0], (c)[1] = (a)[1] - (b)[1], (c)[2] = (a)[2] - (b)[2])
 #define VectorNegate(a,b)       ((b)[0] = -(a)[0], (b)[1] = -(a)[1], (b)[2] = -(a)[2])
+#define VectorSet(v, x, y, z)   ((v)[0] = ((x)), (v)[1] = (y), (v)[2] = (z))
 #define R_AliasTransformVector(in, out)                                         \
     (((out)[0] = DotProduct((in), aliastransform[0]) + aliastransform[0][3]),   \
     ((out)[1] = DotProduct((in), aliastransform[1]) + aliastransform[1][3]),    \
@@ -363,9 +365,11 @@ static adivtab_t adivtab[32*32] = {
 #define YAW     1       // left / right
 #define ROLL    2       // fall over
 #define MAX_INFO_STRING	1024
-
-
-
+#define SURF_DRAWTILED 32
+#define MAX_DLIGHTS 64
+#define LIGHT_MIN 5
+#define VID_CBITS 6
+#define VID_GRADES (1 << VID_CBITS)
 
 typedef float vec_t;
 typedef vec_t vec3_t[3];
@@ -787,6 +791,24 @@ typedef struct {
     int index1;
 } aedge_t;
 
+typedef enum {lt_default, lt_muzzleflash, lt_explosion, lt_rocket,
+    lt_red, lt_blue, lt_redblue, lt_green, lt_redgreen, lt_bluegreen,
+    lt_white, lt_custom, NUM_DLIGHTTYPES } dlighttype_t;
+
+typedef struct {
+    int             key;                // so entities can reuse same entry
+    vec3_t          origin;
+    float           radius;
+    float           die;                // stop lighting after this time
+    float           decay;              // drop this each second
+    float           minlight;           // don't add when contributing less
+    int             bubble;             // non zero means no flashblend bubble
+    dlighttype_t    type;
+#ifdef GLQUAKE
+    byte            color[3];           // use such color if type == lt_custom
+#endif
+} dlight_t;
+
 static aliashdr_t *paliashdr;
 static int r_anumverts;
 static mdl_t *pmdl;
@@ -995,6 +1017,14 @@ static float xcenter, ycenter;
 static float r_aliastransition, r_resfudge;
 static maliasskindesc_t *pskindesc;
 static int a_skinwidth;
+static model_t worldmodel;
+static int skinwidth;
+static byte *skinstart;
+static int cl_minlight;
+static int d_lightstylevalue[256];
+static dlight_t cl_dlights[MAX_DLIGHTS];
+static float r_fullbrightSkins;
+
 
 /* end of r_alias symbols */
 
@@ -3356,6 +3386,280 @@ Referenced by R_AliasDrawModel().
 #endif
 }
 
+/*
+=============================================================================
+
+LIGHT SAMPLING
+
+=============================================================================
+*/
+int RecursiveLightPoint (mnode_t *node, vec3_t start, vec3_t end)
+/*
+Definition at line 175 of file r_light.c.
+
+References mnode_s::children, cl, mnode_s::contents, d_lightstylevalue, mplane_s::dist, DotProduct, msurface_s::extents, mnode_s::firstsurface, msurface_s::flags, MAXLIGHTMAPS, mplane_s::normal, mnode_s::numsurfaces, mnode_s::plane, RecursiveLightPoint(), s, msurface_s::samples, msurface_s::styles, SURF_DRAWTILED, model_s::surfaces, t, msurface_s::texinfo, msurface_s::texturemins, mplane_s::type, mtexinfo_s::vecs, and clientState_t::worldmodel.
+*/
+{
+    int         r;
+    float       front, back, frac;
+    int         side;
+    mplane_t    *plane;
+    vec3_t      mid;
+    msurface_t  *surf;
+    int         s, t, ds, dt;
+    int         i;
+    mtexinfo_t  *tex;
+    byte        *lightmap;
+    unsigned    scale;
+    int         maps;
+
+    if (node->contents < 0)
+        return -1;      // didn't hit anything
+    
+// calculate mid point
+
+// FIXME: optimize for axial
+    plane = node->plane;
+    if (plane->type < 3) {
+        front = start[plane->type] - plane->dist;
+        back = end[plane->type] - plane->dist;
+    } else {
+        front = DotProduct (start, plane->normal) - plane->dist;
+        back = DotProduct (end, plane->normal) - plane->dist;
+    }
+    side = front < 0;
+    
+    if ((back < 0) == side)
+        return RecursiveLightPoint (node->children[side], start, end);
+    
+    frac = front / (front-back);
+    mid[0] = start[0] + (end[0] - start[0])*frac;
+    mid[1] = start[1] + (end[1] - start[1])*frac;
+    mid[2] = start[2] + (end[2] - start[2])*frac;
+    
+// go down front side   
+    r = RecursiveLightPoint (node->children[side], start, mid);
+    if (r >= 0)
+        return r;       // hit something
+        
+    if ( (back < 0) == side )
+        return -1;      // didn't hit anuthing
+        
+// check for impact on this node
+
+    surf = worldmodel.surfaces + node->firstsurface;
+    for (i=0 ; i<node->numsurfaces ; i++, surf++)
+    {
+        if (surf->flags & SURF_DRAWTILED)
+            continue;   // no lightmaps
+
+        tex = surf->texinfo;
+        
+        s = DotProduct (mid, tex->vecs[0]) + tex->vecs[0][3];
+        t = DotProduct (mid, tex->vecs[1]) + tex->vecs[1][3];;
+
+        if (s < surf->texturemins[0] ||
+        t < surf->texturemins[1])
+            continue;
+        
+        ds = s - surf->texturemins[0];
+        dt = t - surf->texturemins[1];
+        
+        if ( ds > surf->extents[0] || dt > surf->extents[1] )
+            continue;
+
+        if (!surf->samples)
+            return 0;
+
+        ds >>= 4;
+        dt >>= 4;
+
+        lightmap = surf->samples;
+        r = 0;
+        if (lightmap)
+        {
+
+            lightmap += dt * ((surf->extents[0]>>4)+1) + ds;
+
+            for (maps = 0 ; maps < MAXLIGHTMAPS && surf->styles[maps] != 255 ;
+                    maps++)
+            {
+                scale = d_lightstylevalue[surf->styles[maps]];
+                r += *lightmap * scale;
+                lightmap += ((surf->extents[0]>>4)+1) *
+                        ((surf->extents[1]>>4)+1);
+            }
+            
+            r >>= 8;
+        }
+        
+        return r;
+    }
+
+// go down back side
+    return RecursiveLightPoint (node->children[!side], mid, end);
+}
+
+
+static int R_LightPoint (vec3_t p)
+/*
+Definition at line 277 of file r_light.c.
+
+References refdef_t::ambientlight, cl, full_light, lightcolor, model_s::lightdata, model_s::nodes, R_FullBrightAllowed(), r_refdef, r_shadows, RecursiveLightPoint(), cvar_s::value, and clientState_t::worldmodel.
+
+Referenced by R_AliasSetupLighting().
+*/
+{
+    vec3_t      end;
+    int         r;
+    
+    if (!worldmodel.lightdata)
+        return 255;
+    
+    end[0] = p[0];
+    end[1] = p[1];
+    end[2] = p[2] - 8192;
+    
+    r = RecursiveLightPoint (worldmodel.nodes, p, end);
+    
+    if (r == -1)
+        r = 0;
+
+    if (r < r_refdef.ambientlight)
+        r = r_refdef.ambientlight;
+
+    return r;
+}
+
+vec_t VectorLength (vec3_t v)
+/*
+Definition at line 248 of file mathlib.c.
+
+Referenced by AddParticleTrail(), Cam_Track(), Cam_TryFlyby(), Classic_ParticleTrail(), EmitSkyPolys(), EmitSkyVert(), Mod_LoadTexinfo(), PM_Friction(), PM_SpectatorMove(), QMB_UpdateParticles(), R_AliasSetupLighting(), R_DrawCoronas(), RadiusFromBounds(), SCR_DrawSpeed(), SV_CheckVelocity(), SV_Multicast(), SV_Physics_Pusher(), TP_RankPoint(), and VX_TeslaCharge().
+
+*/
+{
+    float length;
+
+    length = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+    return sqrt(length);
+}
+
+void R_AliasSetupLighting (entity_t *ent)
+/*
+Definition at line 537 of file r_alias.c.
+
+References alias_forward, alias_right, alias_up, ambientlight, bound, cl, cl_dlights, currententity, LIGHT_MIN, max, MAX_DLIGHTS, refdef2_t::max_fbskins, clientState_t::minlight, MOD_PLAYER, entity_s::model, model_s::modhint, dlight_t::origin, entity_s::origin, r_ambientlight, r_fullbrightSkins, R_LightPoint(), r_plightvec, r_refdef2, r_shadelight, dlight_t::radius, entity_s::renderfx, RF_PLAYERMODEL, RF_WEAPONMODEL, shadelight, refdef2_t::time, cvar_s::value, VectorLength(), VectorSet, VectorSubtract, VID_CBITS, and VID_GRADES.
+
+Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
+*/
+{
+    int lnum, minlight, ambientlight, shadelight;
+    float add, fbskins;
+    vec3_t dist;
+
+    ambientlight = shadelight = R_LightPoint (currententity->origin);
+
+    for (lnum = 0; lnum < MAX_DLIGHTS; lnum++) {
+        if (cl_dlights[lnum].die < r_refdef2.time || !cl_dlights[lnum].radius)
+            continue;
+
+        VectorSubtract (currententity->origin, cl_dlights[lnum].origin, dist);
+        add = cl_dlights[lnum].radius - VectorLength(dist);
+
+        if (add > 0)
+            ambientlight += add;
+    }
+
+    // clamp lighting so it doesn't overbright as much
+    if (ambientlight > 128)
+        ambientlight = 128;
+    if (ambientlight + shadelight > 192)
+        shadelight = 192 - ambientlight;
+
+    // always give the gun some light
+    if ((currententity->renderfx & RF_WEAPONMODEL) && ambientlight < 24)
+        ambientlight = shadelight = 24;
+
+    // never allow players to go totally black
+    if (currententity->model->modhint == MOD_PLAYER || currententity->renderfx & RF_PLAYERMODEL) {
+        if (ambientlight < 8)
+            ambientlight = shadelight = 8;
+    }
+
+
+    if (currententity->model->modhint == MOD_PLAYER || currententity->renderfx & RF_PLAYERMODEL) {
+        fbskins = bound(0, r_fullbrightSkins, r_refdef2.max_fbskins);
+        if (fbskins) {
+            ambientlight = max (ambientlight, 8 + fbskins * 120);
+            shadelight = max (shadelight, 8 + fbskins * 120);
+        }
+    }
+
+
+    minlight = cl_minlight;
+
+    if (ambientlight < minlight)
+        ambientlight = shadelight = minlight;
+
+    // guarantee that no vertex will ever be lit below LIGHT_MIN, so we don't have to clamp off the bottom
+    r_ambientlight = max(ambientlight, LIGHT_MIN);
+    r_ambientlight = (255 - r_ambientlight) << VID_CBITS;
+    r_ambientlight = max(r_ambientlight, LIGHT_MIN);
+    r_shadelight = max(shadelight, 0);
+    r_shadelight *= VID_GRADES;
+
+    // rotate the lighting vector into the model's frame of reference
+    VectorSet(r_plightvec, -alias_forward[0], alias_right[0], -alias_up[0]);
+}
+
+void R_AliasSetupFrameVerts (int frame, trivertx_t **verts) {
+    int i, numframes;
+    maliasgroup_t *paliasgroup;
+    float *pintervals, fullinterval, targettime;
+
+    if (paliashdr->frames[frame].type == ALIAS_SINGLE) {
+        *verts = (trivertx_t *) ((byte *) paliashdr + paliashdr->frames[frame].frame);
+    } else {
+        paliasgroup = (maliasgroup_t *) ((byte *)paliashdr + paliashdr->frames[frame].frame);
+        pintervals = (float *) ((byte *) paliashdr + paliasgroup->intervals);
+        numframes = paliasgroup->numframes;
+        fullinterval = pintervals[numframes - 1];
+
+        // when loading in Mod_LoadAliasGroup, we guaranteed all interval values
+        // are positive, so we don't have to worry about division by 0
+        targettime = r_refdef2.time - ((int) (r_refdef2.time / fullinterval)) * fullinterval;
+
+        for (i = 0; i < numframes - 1; i++) {
+            if (pintervals[i] > targettime)
+                break;
+        }
+        *verts = (trivertx_t *) ((byte *) paliashdr + paliasgroup->frames[i].frame);
+    }
+}
+
+//set r_oldapverts, r_apverts
+void R_AliasSetupFrame (entity_t *ent) {
+    R_AliasSetupFrameVerts(ent->oldframe, &r_oldapverts);
+    R_AliasSetupFrameVerts(ent->frame, &r_apverts);
+}
+
+void D_PolysetUpdateTables (void)
+{
+    int     i;
+    byte    *s;
+    
+    if (r_affinetridesc.skinwidth != skinwidth ||
+        r_affinetridesc.pskin != skinstart)
+    {
+        skinwidth = r_affinetridesc.skinwidth;
+        skinstart = r_affinetridesc.pskin;
+        s = skinstart;
+        for (i=0 ; i<MAX_LBM_HEIGHT ; i++, s+=skinwidth)
+            skintable[i] = s;
+    }
+}
+
 static void R_AliasDrawModel(entity_t *ent)
 /*
 Definition at line 629 of file r_alias.c.
@@ -3437,6 +3741,8 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
 int main()
 {
+	entity_t ent;
+#if 0
 	mtriangle_t tris[10];
 	finalvert_t verts[30];
 	int i;
@@ -3460,6 +3766,8 @@ int main()
 	r_affinetridesc.ptriangles = tris;
 	r_affinetridesc.numtriangles = 10;
 	D_PolysetDraw();
+#endif
+	R_AliasDrawModel(&ent);
 	return 0;
 }
 
