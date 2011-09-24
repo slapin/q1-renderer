@@ -3,6 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 #define MAXHEIGHT 1024
 
 #define DPS_MAXSPANS MAXHEIGHT+1
@@ -2507,9 +2512,21 @@ Referenced by Cache_Alloc(), Mod_Extradata(), Mod_LoadModel(), Mod_TouchModel(),
 }
 
 /* Unimplemented stub */
-static byte *FS_LoadTempFile (char *path, int *len) {
-    /* Loading File Data */
-    return NULL;
+static byte *FS_LoadTempFile (char *path, int *len)
+{
+    struct stat s;
+    int fd;
+    byte *p;
+    int ret = stat(path, &s);
+    if (ret < 0)
+         return NULL;
+    p = malloc(s.st_size);
+    fd = open(path, O_RDONLY);
+    if (fd < 0)
+         return NULL;
+    *len = read(fd, p, s.st_size);
+    close(fd);
+    return p;
 }
 static int hunk_low_used = 0;
 static int Hunk_LowMark (void) {
@@ -2885,6 +2902,9 @@ static void Mod_LoadAliasModel (model_t *mod, void *buffer, int filesize)
     // FIXME: do this right
     mod->mins[0] = mod->mins[1] = mod->mins[2] = -16;
     mod->maxs[0] = mod->maxs[1] = mod->maxs[2] = 16;
+    mod->cache.data = malloc(size + numskins * sizeof (maliasskindesc_t));
+    memcpy(mod->cache.data, pheader, size);
+    printf("%p\n", mod->cache.data);
 
     // move the complete, relocatable alias model to the cache
 #if 0
@@ -2913,13 +2933,7 @@ No doxygen info for this function
 
 
     if (!mod->needload) {
-        if (mod->type == mod_alias) {
-            d = Cache_Check (&mod->cache);
-            if (d)
-                return mod;
-        } else {
             return mod; // not cached at all
-        }
     }
 
     // because the world is so huge, load it one piece at a time
@@ -2953,6 +2967,8 @@ No doxygen info for this function
         Mod_LoadBrushModel (mod, buf);
         break;
 #endif
+    default:
+        return NULL;
     }
 
     return mod;
@@ -2967,9 +2983,6 @@ References model_s::cache, Cache_Check(), cache_user_s::data, Mod_LoadModel(), a
 */
 {
     void *r;
-
-    if ((r = Cache_Check (&mod->cache)))
-        return r;
 
     Mod_LoadModel (mod, true);
 
@@ -3677,6 +3690,8 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
     pmodel = ent->model;
     paliashdr = Mod_Extradata(pmodel);
+    if (!paliashdr)
+         return;
     pmdl = (mdl_t *) ((byte *) paliashdr + paliashdr->model);
 
     if (ent->frame >= pmdl->numframes || ent->frame < 0) {
@@ -3742,6 +3757,22 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 int main()
 {
 	entity_t ent;
+	model_t m;
+	strcpy(m.name, "test");
+	m.needload = true;
+	m.cache.data = NULL;
+	ent.model = &m;
+	ent.origin[0] = 0.;
+	ent.origin[1] = 0.;
+	ent.origin[2] = 0.;
+	ent.frame = 0;
+	ent.oldframe = 0;
+	ent.framelerp = 0;
+	ent.renderfx = 0;
+	ent.angles[ROLL] = 0.0;
+	ent.angles[YAW] = 0.0;
+	ent.angles[PITCH] = 0.0;
+	currententity = &ent;
 #if 0
 	mtriangle_t tris[10];
 	finalvert_t verts[30];
