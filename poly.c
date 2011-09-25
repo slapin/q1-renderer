@@ -2451,7 +2451,7 @@ Referenced by R_AliasDrawModel().
     D_PolysetDraw ();
 }
 
-
+#if 0
 static void Cache_UnlinkLRU (cache_system_t *cs)
 /*
 Definition at line 312 of file zone.c.
@@ -2510,6 +2510,7 @@ Referenced by Cache_Alloc(), Mod_Extradata(), Mod_LoadModel(), Mod_TouchModel(),
 
     return c->data;
 }
+#endif
 
 /* Unimplemented stub */
 static byte *FS_LoadTempFile (char *path, int *len)
@@ -2532,11 +2533,13 @@ static int hunk_low_used = 0;
 static int Hunk_LowMark (void) {
     return hunk_low_used;
 }
+#if 0
 void *Hunk_AllocName (int size, char *name)
 {
 	hunk_low_used += size;
 	return malloc(size);
 }
+#endif
 
 #define LittleLong(x)	(x)
 #define LittleFloat(x)	(x)
@@ -2551,7 +2554,7 @@ Referenced by Mod_LoadAliasSkinGroup().
 {
     byte *pskin, *pinskin;
 
-    pskin = (byte *) Hunk_AllocName (skinsize, loadname);
+    pskin = (byte *) malloc(skinsize);
     pinskin = (byte *)pin;
     *pskinindex = (byte *)pskin - (byte *)pheader;
 
@@ -2575,8 +2578,8 @@ void * Mod_LoadAliasSkinGroup (void * pin, int *pskinindex, int skinsize, aliash
 
     numskins = LittleLong (pinskingroup->numskins);
 
-    paliasskingroup = (maliasskingroup_t *) Hunk_AllocName (sizeof (maliasskingroup_t) +
-            (numskins - 1) * sizeof (paliasskingroup->skindescs[0]), loadname);
+    paliasskingroup = (maliasskingroup_t *) malloc(sizeof (maliasskingroup_t) +
+            (numskins - 1) * sizeof (paliasskingroup->skindescs[0]));
 
     paliasskingroup->numskins = numskins;
 
@@ -2584,7 +2587,7 @@ void * Mod_LoadAliasSkinGroup (void * pin, int *pskinindex, int skinsize, aliash
 
     pinskinintervals = (daliasskininterval_t *)(pinskingroup + 1);
 
-    poutskinintervals = (float *) Hunk_AllocName (numskins * sizeof (float), loadname);
+    poutskinintervals = (float *) malloc(numskins * sizeof (float));
 
     paliasskingroup->intervals = (byte *)poutskinintervals - (byte *)pheader;
 
@@ -2628,7 +2631,7 @@ References daliasframe_t::bboxmax, daliasframe_t::bboxmin, Hunk_AllocName(), tri
     }
 
     pinframe = (trivertx_t *)(pdaliasframe + 1);
-    pframe = (trivertx_t *) Hunk_AllocName (numv * sizeof(*pframe), loadname);
+    pframe = (trivertx_t *) malloc(numv * sizeof(*pframe));
 
     *pframeindex = (byte *)pframe - (byte *)pheader;
 
@@ -2660,13 +2663,14 @@ References maliasgroupframedesc_s::bboxmax, daliasgroup_t::bboxmax, maliasgroupf
     daliasinterval_t *pin_intervals;
     float *poutintervals;
     void *ptemp;
+    printf("%s\n", __func__);
 
     pingroup = (daliasgroup_t *)pin;
 
     numframes = LittleLong (pingroup->numframes);
 
-    paliasgroup = (maliasgroup_t *) Hunk_AllocName (sizeof (maliasgroup_t) +
-            (numframes - 1) * sizeof (paliasgroup->frames[0]), loadname);
+    paliasgroup = (maliasgroup_t *) malloc(sizeof (maliasgroup_t) +
+           (numframes - 1) * sizeof (paliasgroup->frames[0]));
 
     paliasgroup->numframes = numframes;
 
@@ -2680,7 +2684,7 @@ References maliasgroupframedesc_s::bboxmax, daliasgroup_t::bboxmax, maliasgroupf
 
     pin_intervals = (daliasinterval_t *)(pingroup + 1);
 
-    poutintervals = (float *) Hunk_AllocName (numframes * sizeof (float), loadname);
+    poutintervals = (float *) malloc(numframes * sizeof (float));
 
     paliasgroup->intervals = (byte *)poutintervals - (byte *)pheader;
 
@@ -2764,13 +2768,14 @@ static void Mod_LoadAliasModel (model_t *mod, void *buffer, int filesize)
             sizeof (mdl_t) +
             LittleLong (pinmodel->numverts) * sizeof (stvert_t) +
             LittleLong (pinmodel->numtris) * sizeof (mtriangle_t);
+    printf("%s: size = %d numframes = %d\n", __func__, size, LittleLong (pinmodel->numframes));
 
-    pheader = (aliashdr_t *) Hunk_AllocName (size, loadname);
+    pheader = (aliashdr_t *) malloc(size);
     pmodel = (mdl_t *) ((byte *)&pheader[1] +
             (LittleLong (pinmodel->numframes) - 1) *
              sizeof (pheader->frames[0]));
     
-    //  mod->cache.data = pheader;
+    mod->cache.data = pheader;
     mod->flags = LittleLong (pinmodel->flags);
 
     // endian-adjust and copy the data, starting with the alias model header
@@ -2822,8 +2827,7 @@ static void Mod_LoadAliasModel (model_t *mod, void *buffer, int filesize)
 
     pskintype = (daliasskintype_t *)&pinmodel[1];
 
-    pskindesc = (maliasskindesc_t *) Hunk_AllocName (numskins * sizeof (maliasskindesc_t),
-                                loadname);
+    pskindesc = (maliasskindesc_t *) malloc(numskins * sizeof (maliasskindesc_t));
 
     pheader->skindesc = (byte *) pskindesc - (byte *)pheader;
 
@@ -2902,9 +2906,9 @@ static void Mod_LoadAliasModel (model_t *mod, void *buffer, int filesize)
     // FIXME: do this right
     mod->mins[0] = mod->mins[1] = mod->mins[2] = -16;
     mod->maxs[0] = mod->maxs[1] = mod->maxs[2] = 16;
-    mod->cache.data = malloc(size + numskins * sizeof (maliasskindesc_t));
-    memcpy(mod->cache.data, pheader, size);
-    printf("%p\n", mod->cache.data);
+//    mod->cache.data = malloc(size + numskins * sizeof (maliasskindesc_t));
+//    memcpy(mod->cache.data, pheader, size);
+//    printf("%p\n", mod->cache.data);
 
     // move the complete, relocatable alias model to the cache
 #if 0
@@ -3177,6 +3181,7 @@ Referenced by R_AliasCheckBBox().
         *mins = &paliashdr->frames[frame].bboxmin;
         *maxs = &paliashdr->frames[frame].bboxmax;
     } else {
+	printf("%s: frame %d, frameidx = %d\n", __func__, frame, paliashdr->frames[frame].frame);
         paliasgroup = (maliasgroup_t *) ((byte *) paliashdr + paliashdr->frames[frame].frame);
         pintervals = (float *) ((byte *) paliashdr + paliasgroup->intervals);
         numframes = paliasgroup->numframes;
