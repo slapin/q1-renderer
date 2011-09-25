@@ -3303,6 +3303,7 @@ Referenced by R_AliasDrawModel().
 	// expand, rotate, and translate points into worldspace
 	R_AliasSetUpTransform(0);
 
+        printf("%s:%d\n", __func__, __LINE__);
 	// construct the base bounding box for this frame
 	if (r_framelerp == 1) {
 		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs);
@@ -3342,18 +3343,32 @@ Referenced by R_AliasDrawModel().
 		basepts[2][2] = basepts[3][2] = basepts[6][2] = basepts[7][2] =
 		    (float)max(maxs->v[2], oldmaxs->v[2]);
 	}
+        printf("%s:%d\n", __func__, __LINE__);
 
 	zclipped = false;
 	zfullyclipped = true;
 
 	minz = 9999;
 	for (i = 0; i < 8; i++) {
+		int j, k;
+		for (j = 0; j < 3; j++)
+			for (k = 0; k < 4; k++)
+				printf("aliastransform[%d][%d] = %f\n", j, k, aliastransform[j][k]);
 		R_AliasTransformVector(&basepts[i][0], &viewaux[i].fv[0]);
+		printf("%s:%d viewaux[i].fv[0] = %f\n", __func__, __LINE__, viewaux[i].fv[0]);
+		printf("%s:%d viewaux[i].fv[1] = %f\n", __func__, __LINE__, viewaux[i].fv[1]);
+		printf("%s:%d viewaux[i].fv[2] = %f\n", __func__, __LINE__, viewaux[i].fv[2]);
+		printf("%s:%d basepts[i][0] = %f\n", __func__, __LINE__, basepts[i][0]);
+		printf("%s:%d basepts[i][1] = %f\n", __func__, __LINE__, basepts[i][1]);
+		printf("%s:%d basepts[i][2] = %f\n", __func__, __LINE__, basepts[i][2]);
 
 		if (viewaux[i].fv[2] < r_nearclip) {
 			// we must clip points that are closer than the near clip plane
 			viewpts[i].flags = ALIAS_Z_CLIP;
 			zclipped = true;
+			printf("%s:%d viewaux[i].fv[0] = %f\n", __func__, __LINE__, viewaux[i].fv[0]);
+			printf("%s:%d viewaux[i].fv[1] = %f\n", __func__, __LINE__, viewaux[i].fv[1]);
+			printf("%s:%d viewaux[i].fv[2] = %f\n", __func__, __LINE__, viewaux[i].fv[2]);
 		} else {
 			if (viewaux[i].fv[2] < minz)
 				minz = viewaux[i].fv[2];
@@ -3361,11 +3376,13 @@ Referenced by R_AliasDrawModel().
 			zfullyclipped = false;
 		}
 	}
+        printf("%s:%d\n", __func__, __LINE__);
 
 	if (zfullyclipped)
 		return false;	// everything was near-z-clipped
 
 	numv = 8;
+        printf("%s:%d\n", __func__, __LINE__);
 
 	if (zclipped) {
 		// organize points by edges, use edges to get new points (possible trivial reject)
@@ -3396,6 +3413,7 @@ Referenced by R_AliasDrawModel().
 	// project the vertices that remain after clipping
 	anyclip = 0;
 	allclip = ALIAS_XY_CLIP_MASK;
+        printf("%s:%d\n", __func__, __LINE__);
 
 	// TODO: probably should do this loop in ASM, especially if we use floats
 	for (i = 0; i < numv; i++) {
@@ -3423,6 +3441,7 @@ Referenced by R_AliasDrawModel().
 		anyclip |= flags;
 		allclip &= flags;
 	}
+        printf("%s:%d\n", __func__, __LINE__);
 
 	if (allclip)
 		return false;	// trivial reject off one side
@@ -3433,6 +3452,7 @@ Referenced by R_AliasDrawModel().
 		if (minz > (r_aliastransition + (pmdl->size * r_resfudge)))
 			ent->trivial_accept |= 2;
 	}
+        printf("%s:%d\n", __func__, __LINE__);
 
 	return true;
 }
@@ -3828,10 +3848,12 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	else
 		r_framelerp = min(ent->framelerp, 1);
 
+        printf("%s:%d\n", __func__, __LINE__);
 	if (!(ent->renderfx & RF_WEAPONMODEL)) {
 		if (!R_AliasCheckBBox(ent))
 			return;
 	}
+        printf("%s:%d\n", __func__, __LINE__);
 
 	r_amodels_drawn++;
 
@@ -3841,6 +3863,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 			     ~(CACHE_SIZE - 1));
 	pauxverts = &auxverts[0];
 
+        printf("%s:%d\n", __func__, __LINE__);
 	R_AliasSetupSkin(ent);
 	R_AliasSetUpTransform(ent->trivial_accept);
 	R_AliasSetupLighting(ent);
@@ -3848,6 +3871,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
 	if (!ent->colormap)
 		Sys_Error("R_AliasDrawModel: !ent->colormap");
+        printf("%s:%d\n", __func__, __LINE__);
 
 	r_affinetridesc.drawtype = (ent->trivial_accept == 3);
 
@@ -3865,6 +3889,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 		ziscale = (float)0x8000 *(float)0x10000;
 	else
 	ziscale = (float)0x8000 *(float)0x10000 *3.0;
+        printf("%s:%d\n", __func__, __LINE__);
 
 	if (ent->trivial_accept)
 		R_AliasPrepareUnclippedPoints();
@@ -3882,7 +3907,7 @@ int main()
 	ent.model = &m;
 	ent.origin[0] = 0.;
 	ent.origin[1] = 0.;
-	ent.origin[2] = 0.;
+	ent.origin[2] = 5.;
 	ent.frame = 0;
 	ent.oldframe = 0;
 	ent.framelerp = 0;
@@ -3891,6 +3916,8 @@ int main()
 	ent.angles[YAW] = 0.0;
 	ent.angles[PITCH] = 0.0;
 	currententity = &ent;
+	aliasxscale = 1.0;
+	aliasyscale = 1.0;
 #if 0
 	mtriangle_t tris[10];
 	finalvert_t verts[30];
