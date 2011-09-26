@@ -1047,7 +1047,7 @@ static char loadname[32];
 static model_t *loadmodel;
 static vec3_t alias_forward, alias_right, alias_up;
 static float r_viewmodelsize;
-static vec3_t vup, vright, vpn;
+static vec3_t vup, vright, vpn /* Forward */;
 static refdef2_t r_refdef2;
 static aedge_t aedges[12] = {
 	{0, 1}, {1, 2}, {2, 3}, {3, 0},
@@ -1189,6 +1189,8 @@ Referenced by D_PolysetDraw().
 			index0 = pfv + ptri[i].vertindex[0];
 			index1 = pfv + ptri[i].vertindex[1];
 			index2 = pfv + ptri[i].vertindex[2];
+        		printf("%s:%d pfv: %d, %d, %d, %d, %d, %d\n", __func__, __LINE__,
+				index0->v[0], index0->v[1], index1->v[0], index1->v[1], index2->v[0],  index2->v[1]);
 
 			if (((index0->v[1] - index1->v[1]) *
 			     (index0->v[0] - index2->v[0]) -
@@ -1838,7 +1840,7 @@ Referenced by D_PolysetDraw().
 		}
 
 		D_PolysetSetEdgeTable();
-       		printf("%s:%d\n", __func__, __LINE__);
+       		printf("%s:%d running D_RasterizeAliasPolySmooth()\n", __func__, __LINE__);
 		D_RasterizeAliasPolySmooth();
 	}
 }
@@ -1924,6 +1926,7 @@ Referenced by R_AliasPreparePoints().
 	    DotProduct(interpolated_verts,
 		       aliastransform[2]) + aliastransform[2][3];
 
+        printf("%s:%d fv[0] = %d fv[1] = %d\n", __func__, __LINE__, fv->v[0], fv->v[1]);
 	fv->v[2] = pstverts->s;
 	fv->v[3] = pstverts->t;
 
@@ -2202,10 +2205,13 @@ Referenced by R_AliasPreparePoints().
         printf("%s:%d\n", __func__, __LINE__);
 // copy vertexes and fix seam texture coordinates
 	if (ptri->facesfront) {
+        	printf("%s:%d facesfront\n", __func__, __LINE__);
 		fv[0][0] = pfinalverts[ptri->vertindex[0]];
 		fv[0][1] = pfinalverts[ptri->vertindex[1]];
 		fv[0][2] = pfinalverts[ptri->vertindex[2]];
 	} else {
+        	printf("%s:%d not facesfront\n", __func__, __LINE__);
+		fv[0][0] = pfinalverts[ptri->vertindex[0]];
 		for (i = 0; i < 3; i++) {
 			fv[0][i] = pfinalverts[ptri->vertindex[i]];
 
@@ -2217,11 +2223,20 @@ Referenced by R_AliasPreparePoints().
 
 // clip
 	clipflags = fv[0][0].flags | fv[0][1].flags | fv[0][2].flags;
+	for (i = 0; i < 3; i++) {
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[0]);
+       		printf("%s:%d A fv[0][i].v[1] = %d\n", __func__, __LINE__, fv[0][i].v[1]);
+	}
+	for (i = 0; i < 3; i++) {
+       		printf("%s:%d B fv[1][i].v[0] = %d\n", __func__, __LINE__, fv[1][i].v[0]);
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[1]);
+	}
 
 	if (clipflags & ALIAS_Z_CLIP) {
 		for (i = 0; i < 3; i++)
 			av[i] = pauxverts[ptri->vertindex[i]];
 
+        	printf("%s:%d Z\n", __func__, __LINE__);
 		k = R_AliasClip(fv[0], fv[1], ALIAS_Z_CLIP, 3, R_Alias_clip_z);
 		if (k == 0)
 			return;
@@ -2232,42 +2247,85 @@ Referenced by R_AliasPreparePoints().
 		pingpong = 0;
 		k = 3;
 	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[0]);
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[1]);
+	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[0]);
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[1]);
+	}
 
 	if (clipflags & ALIAS_LEFT_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
 				ALIAS_LEFT_CLIP, k, R_Alias_clip_left);
+        	printf("%s:%d Left\n", __func__, __LINE__);
 		if (k == 0)
 			return;
 
 		pingpong ^= 1;
+	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[0]);
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[1]);
+	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[0]);
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[1]);
 	}
 
 	if (clipflags & ALIAS_RIGHT_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
 				ALIAS_RIGHT_CLIP, k, R_Alias_clip_right);
+        	printf("%s:%d Right\n", __func__, __LINE__);
 		if (k == 0)
 			return;
 
 		pingpong ^= 1;
+	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[0]);
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[1]);
+	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[0]);
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[1]);
 	}
 
 	if (clipflags & ALIAS_BOTTOM_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
 				ALIAS_BOTTOM_CLIP, k, R_Alias_clip_bottom);
+        	printf("%s:%d Bottom\n", __func__, __LINE__);
 		if (k == 0)
 			return;
 
 		pingpong ^= 1;
 	}
-        printf("%s:%d\n", __func__, __LINE__);
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[0]);
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[1]);
+	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[0]);
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[1]);
+	}
 
 	if (clipflags & ALIAS_TOP_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
 				ALIAS_TOP_CLIP, k, R_Alias_clip_top);
+        	printf("%s:%d Top\n", __func__, __LINE__);
 		if (k == 0)
 			return;
 
 		pingpong ^= 1;
+	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[0]);
+       		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__, fv[0][i].v[1]);
+	}
+	for (i = 0; i < k; i++) {
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[0]);
+       		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__, fv[1][i].v[1]);
 	}
 
 	for (i = 0; i < k; i++) {
@@ -2288,13 +2346,14 @@ Referenced by R_AliasPreparePoints().
 	mtri.facesfront = ptri->facesfront;
 	r_affinetridesc.ptriangles = &mtri;
 	r_affinetridesc.pfinalverts = fv[pingpong];
+       	printf("%s:%d k = %d\n", __func__, __LINE__, k);
 
 // FIXME: do all at once as trifan?
 	mtri.vertindex[0] = 0;
 	for (i = 1; i < k - 1; i++) {
 		mtri.vertindex[1] = i;
 		mtri.vertindex[2] = i + 1;
-        	printf("%s:%d\n", __func__, __LINE__);
+        	printf("%s:%d exec D_PolysetDraw\n", __func__, __LINE__);
 		D_PolysetDraw();
 	}
 }
@@ -2328,7 +2387,9 @@ Referenced by R_AliasDrawModel().
 		if (av->fv[2] < 1.f) {
 			fv->flags |= ALIAS_Z_CLIP;
 		} else {
+        		printf("%s:%d\n", __func__, __LINE__);
 			R_AliasProjectFinalVert(fv, av);
+        		printf("%s:%d C fv[0] = %d fv[1] = %d\n", __func__, __LINE__, fv->v[0], fv->v[1]);
 
 			if (fv->v[0] < r_refdef.aliasvrect.x)
 				fv->flags |= ALIAS_LEFT_CLIP;
@@ -2349,12 +2410,13 @@ Referenced by R_AliasDrawModel().
 		pfv[0] = &pfinalverts[ptri->vertindex[0]];
 		pfv[1] = &pfinalverts[ptri->vertindex[1]];
 		pfv[2] = &pfinalverts[ptri->vertindex[2]];
-		printf("%s:%d, %f, %f, %f\n", __func__, __LINE__, pfv[0]->v[0], pfv[1]->v[0], pfv[2]->v[0]);
-		printf("%s:%d, %f, %f, %f\n", __func__, __LINE__, pfv[0]->v[1], pfv[1]->v[1], pfv[2]->v[1]);
 
 		if (pfv[0]->flags & pfv[1]->flags & pfv[2]->
 		    flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
 			continue;	// completely clipped
+
+		printf("%s:%d, FV1 %d, %d, %d\n", __func__, __LINE__, pfv[0]->v[0], pfv[1]->v[0], pfv[2]->v[0]);
+		printf("%s:%d, FV2 %d, %d, %d\n", __func__, __LINE__, pfv[0]->v[1], pfv[1]->v[1], pfv[2]->v[1]);
 
 		if (!
 		    ((pfv[0]->flags | pfv[1]->flags | pfv[2]->
@@ -2362,11 +2424,11 @@ Referenced by R_AliasDrawModel().
 			// totally unclipped
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
-        		printf("%s:%d\n", __func__, __LINE__);
+        		printf("%s:%d unclipped\n", __func__, __LINE__);
 			D_PolysetDraw();
 		} else {
 			// partially clipped
-        		printf("%s:%d\n", __func__, __LINE__);
+        		printf("%s:%d partially clipped\n", __func__, __LINE__);
 			R_AliasClipTriangle(ptri);
 		}
 	}
@@ -2409,6 +2471,7 @@ Referenced by R_AliasPrepareUnclippedPoints().
 		fv->v[1] =
 		    ((DotProduct(interpolated_verts, aliastransform[1]) +
 		      aliastransform[1][3]) * zi) + aliasycenter;
+		printf("%s:%d fv[0] = %d fv[1] = %d\n",__func__, __LINE__, fv->v[0], fv->v[1]);
 
 		fv->v[2] = pstverts->s;
 		fv->v[3] = pstverts->t;
@@ -3949,9 +4012,9 @@ int main()
 	m.needload = true;
 	m.cache.data = NULL;
 	ent.model = &m;
-	ent.origin[0] = -1.;
-	ent.origin[1] = -1.;
-	ent.origin[2] = -5.;
+	ent.origin[0] = -2.5;
+	ent.origin[1] = 1.5;
+	ent.origin[2] = -2.;
 	ent.frame = 0;
 	ent.oldframe = 0;
 	ent.framelerp = 0;
@@ -3959,6 +4022,7 @@ int main()
 	ent.angles[ROLL] = 0.0;
 	ent.angles[YAW] = 0.0;
 	ent.angles[PITCH] = 0.0;
+	ent.skinnum = 0;
 	currententity = &ent;
 	aliasxscale = 100.0;
 	aliasyscale = 100.0;
@@ -3979,6 +4043,10 @@ int main()
 		d_scantable[i] = i * MAXROWBYTES;
 		zspantable[i] = d_pzbuffer + i*d_zwidth;
 	}
+	r_refdef.aliasvrect.x = 0;
+	r_refdef.aliasvrect.y = 0;
+	r_refdef.aliasvrectbottom = MAXHEIGHT;
+	r_refdef.aliasvrectright = MAXWIDTH;
 #if 0
 	mtriangle_t tris[10];
 	finalvert_t verts[30];
