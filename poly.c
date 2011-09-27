@@ -140,7 +140,7 @@ static int ubasestep;
 static int errorterm, erroradjustup, erroradjustdown;
 
 static edgetable *pedgetable;
-short *zspantable[MAXHEIGHT];
+static short *zspantable[MAXHEIGHT];
 static int d_scantable[MAXHEIGHT];
 static byte *skintable[MAX_LBM_HEIGHT];
 static edgetable edgetables[12] = {
@@ -4003,7 +4003,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
         printf("%s:%d\n", __func__, __LINE__);
 }
 
-int main()
+int main(int argc, char *argv[])
 {
 	entity_t ent;
 	int i, fd;
@@ -4023,6 +4023,8 @@ int main()
 	ent.angles[YAW] = 0.0;
 	ent.angles[PITCH] = 0.0;
 	ent.skinnum = 0;
+	ent.colormap = malloc(sizeof(pixel_t) * 256);
+	memset(ent.colormap, 0xff, sizeof(pixel_t) * 256);
 	currententity = &ent;
 	aliasxscale = 100.0;
 	aliasyscale = 100.0;
@@ -4047,6 +4049,29 @@ int main()
 	r_refdef.aliasvrect.y = 0;
 	r_refdef.aliasvrectbottom = MAXHEIGHT;
 	r_refdef.aliasvrectright = MAXWIDTH;
+	for (i = 0; i < argc; i++) {
+		switch(i) {
+		case 0:
+			break;
+		case 1:
+			aliasxscale = atof(argv[i]);
+			break;
+		case 2:
+			aliasyscale = atof(argv[i]);
+			break;
+		case 3:
+			ent.origin[0] = atof(argv[i]);
+			break;
+		case 4:
+			ent.origin[1] = atof(argv[i]);
+			break;
+		case 5:
+			ent.origin[2] = atof(argv[i]);
+			break;
+		default:
+			break;
+		}
+	}
 #if 0
 	mtriangle_t tris[10];
 	finalvert_t verts[30];
@@ -4077,6 +4102,8 @@ int main()
 	R_AliasDrawModel(&ent);
 	fd = open("zbuf", O_CREAT|O_RDWR|O_TRUNC, 0644);
 	write(fd, d_pzbuffer, MAXHEIGHT * MAXROWBYTES * 2);
+	close(fd);
+	fd = open("viewbuf", O_CREAT|O_RDWR|O_TRUNC, 0644);
 	write(fd, d_viewbuffer, MAXHEIGHT * MAXROWBYTES * 2);
 	close(fd);
 
