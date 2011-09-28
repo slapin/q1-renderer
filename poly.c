@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#define PNG_DEBUG 3
+#include <png.h>
 
 #define MAXHEIGHT 1024
 #define MAXWIDTH 1280
@@ -4016,6 +4018,101 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
         printf("%s:%d\n", __func__, __LINE__);
 }
 
+static void write_xbm(char *name, int width,
+		int height, unsigned char *pixdata) 
+{
+	int fd, i;
+	char *buf = malloc(1024);
+	memset(buf, 0, 1024);
+	strcpy(buf, name);
+	strcat(buf, ".xpm");
+	fd = open(buf, O_RDWR|O_CREAT|O_TRUNC, 0644);
+	strcpy(buf, "#define ");
+	strcat(buf, name);
+	strcat(buf, "_width ");
+	write(fd, buf, strlen(buf));
+	snprintf(buf, 1024, "%d\n", width);
+	write(fd, buf, strlen(buf));
+	strcpy(buf, "#define ");
+	strcat(buf, name);
+	strcat(buf, "_height ");
+	write(fd, buf, strlen(buf));
+	snprintf(buf, 1024, "%d\n", height);
+	write(fd, buf, strlen(buf));
+	strcpy(buf, "#define ");
+	strcat(buf, name);
+	strcat(buf, "_bits = {");
+	write(fd, buf, strlen(buf));
+	for (i = 0; i < width * height; i++) {
+		snprintf(buf, 1024, "%d, ", pixdata[i]);
+		write(fd, buf, strlen(buf));
+	}
+	strcpy(buf, "\n}\n");
+	write(fd, buf, strlen(buf));
+	close(fd);
+	free(buf);
+}
+
+void write_png_file(char* file_name, int width,
+		int height,
+		const unsigned char *buffer)
+{
+	png_structp png_ptr;
+	png_infop info_ptr;
+	unsigned char **row_pointers = malloc(height * sizeof(unsigned char *));
+	int i;
+        /* create file */
+        FILE *fp = fopen(file_name, "wb");
+        if (!fp)
+		return;
+	for (i = 0; i < height; i++)
+		row_pointers[i] = buffer + width * i;
+
+
+        /* initialize stuff */
+        png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+
+        if (!png_ptr)
+		return;
+
+        info_ptr = png_create_info_struct(png_ptr);
+        if (!info_ptr)
+		return;
+
+        if (setjmp(png_jmpbuf(png_ptr)))
+		return;
+
+        png_init_io(png_ptr, fp);
+
+
+        /* write header */
+        if (setjmp(png_jmpbuf(png_ptr)))
+		return;
+
+        png_set_IHDR(png_ptr, info_ptr, width, height,
+                     8, PNG_COLOR_TYPE_GRAY, PNG_INTERLACE_NONE,
+                     PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+
+        png_write_info(png_ptr, info_ptr);
+
+
+        /* write bytes */
+        if (setjmp(png_jmpbuf(png_ptr)))
+		return;
+
+        png_write_image(png_ptr, row_pointers);
+
+
+        /* end write */
+        if (setjmp(png_jmpbuf(png_ptr)))
+		return;
+
+        png_write_end(png_ptr, NULL);
+
+        fclose(fp);
+}
+
+
 int main(int argc, char *argv[])
 {
 	byte *pb;
@@ -4129,9 +4226,12 @@ int main(int argc, char *argv[])
 		fd = open("viewbuf", O_CREAT|O_RDWR|O_TRUNC, 0644);
 		write(fd, d_viewbuffer, MAXHEIGHT * MAXROWBYTES * 1);
 		close(fd);
+	//	write_xbm("viewbuf", 1280, 1024, d_viewbuffer);
+		write_png_file("viewbuf.png", 1280, 1024, d_viewbuffer);
 	} else {
 		unlink("viewbuf");
 	}
 
 	return 0;
 }
+
