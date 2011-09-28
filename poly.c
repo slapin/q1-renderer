@@ -1125,7 +1125,9 @@ Referenced by D_DrawSubdiv().
 
  split:
 // split this edge
+#if 0
 	printf("%s:%d lp1[1] + lp2[1] = %d\n", __func__, __LINE__, lp1[1] + lp2[1]);
+#endif
 	new[0] = (lp1[0] + lp2[0]) >> 1;
 	new[1] = (lp1[1] + lp2[1]) >> 1;
 	new[2] = (lp1[2] + lp2[2]) >> 1;
@@ -1145,7 +1147,9 @@ Referenced by D_DrawSubdiv().
 
 		*zbuf = z;
 		pix = d_pcolormap[skintable[new[3] >> 16][new[2] >> 16]];
+#if 0
 		printf("%p = %d\n", &d_viewbuffer[d_scantable[new[1]] + new[0]], pix);
+#endif
 		d_viewbuffer[d_scantable[new[1]] + new[0]] = pix;
 	}
 
@@ -2485,7 +2489,9 @@ Referenced by R_AliasPrepareUnclippedPoints().
 		fv->v[1] =
 		    ((DotProduct(interpolated_verts, aliastransform[1]) +
 		      aliastransform[1][3]) * zi) + aliasycenter;
+#if 0
 		printf("%s:%d fv[0] = %d fv[1] = %d\n",__func__, __LINE__, fv->v[0], fv->v[1]);
+#endif
 
 		fv->v[2] = pstverts->s;
 		fv->v[3] = pstverts->t;
@@ -3326,16 +3332,22 @@ References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP,
 
 	// FIXME: can do more efficiently than full concatenation
 	R_ConcatTransforms(t2matrix, tmatrix, rotationmatrix);
+#if 0
 	DUMP_MATRIX(rotationmatrix);
+#endif
 
 	// TODO: should be global, set when vright, etc., set
 	VectorCopy(vright, viewmatrix[0]);
 	VectorNegate(vup, viewmatrix[1]);
 	VectorCopy(vpn, viewmatrix[2]);
+#if 0
 	DUMP_MATRIX(viewmatrix);
+#endif
 
 	R_ConcatTransforms(viewmatrix, rotationmatrix, aliastransform);
+#if 0
 	DUMP_MATRIX(aliastransform);
+#endif
 
 	// do the scaling up of x and y to screen coordinates as part of the transform
 	// for the unclipped case (it would mess up clipping in the clipped case).
@@ -3413,19 +3425,23 @@ Referenced by R_AliasDrawModel().
 	unsigned anyclip, allclip;
 	trivertx_t *mins, *maxs, *oldmins, *oldmaxs;
 	int j, k;
+#if 0
 	for (j = 0; j < 3; j++)
 		for (k = 0; k < 4; k++)
 			printf("%s:%d aliastransform[%d][%d] = %f\n", __func__, __LINE__, j, k, aliastransform[j][k]);
+#endif
 
 	ent->trivial_accept = 0;
 
 	// expand, rotate, and translate points into worldspace
 	R_AliasSetUpTransform(0);
+#if 0
 	for (j = 0; j < 3; j++)
 		for (k = 0; k < 4; k++)
 			printf("%s:%d aliastransform[%d][%d] = %f\n", __func__, __LINE__, j, k, aliastransform[j][k]);
 
         printf("%s:%d\n", __func__, __LINE__);
+#endif
 	// construct the base bounding box for this frame
 	if (r_framelerp == 1) {
 		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs);
@@ -3565,13 +3581,17 @@ Referenced by R_AliasDrawModel().
 
 	ent->trivial_accept = !anyclip & !zclipped;
 
+#if 0
         printf("%s:%d ent->trivial_accept = %d\n", __func__, __LINE__, ent->trivial_accept);
+#endif
 
 	if (ent->trivial_accept) {
 		if (minz > (r_aliastransition + (pmdl->size * r_resfudge)))
 			ent->trivial_accept |= 2;
 	}
+#if 0
         printf("%s:%d\n", __func__, __LINE__);
+#endif
 
 	return true;
 }
@@ -4182,6 +4202,24 @@ int main(int argc, char *argv[])
 			break;
 		case 5:
 			ent.origin[2] = atof(argv[i]);
+			break;
+		case 6:
+			vright[0] = atof(argv[i]);
+			break;
+		case 7:
+			vright[1] = atof(argv[i]);
+			break;
+		case 8:
+			vright[2] = atof(argv[i]);
+			break;
+		case 9:
+			vup[0] = atof(argv[i]);
+			break;
+		case 10:
+			vup[1] = atof(argv[i]);
+			break;
+		case 11:
+			vup[2] = atof(argv[i]);
 			break;
 		default:
 			break;
