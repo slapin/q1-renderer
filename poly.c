@@ -7,8 +7,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <limits.h>
 #define PNG_DEBUG 3
 #include <png.h>
+#include <allegro.h>
 
 #define MAXHEIGHT 1024
 #define MAXWIDTH 1280
@@ -1755,7 +1757,9 @@ Referenced by D_DrawNonSubdiv().
 	a_spans[initialrightheight].count = -999999;	// mark end of the spanpackages
 	D_PolysetDrawSpans8(a_spans);
 
+#if 0
        	printf("%s:%d\n", __func__, __LINE__);
+#endif
 // scan out the bottom part of the right edge, if it exists
 	if (pedgetable->numrightedges == 2) {
 		int height;
@@ -1777,7 +1781,9 @@ Referenced by D_DrawNonSubdiv().
 		d_countextrastep = ubasestep + 1;
 		a_spans[initialrightheight + height].count = -999999;
 		// mark end of the spanpackages
+#if 0
        		printf("%s:%d\n", __func__, __LINE__);
+#endif
 		D_PolysetDrawSpans8(pstart);
 	}
 }
@@ -1848,7 +1854,9 @@ Referenced by D_PolysetDraw().
 		}
 
 		D_PolysetSetEdgeTable();
+#if 0
        		printf("%s:%d running D_RasterizeAliasPolySmooth()\n", __func__, __LINE__);
+#endif
 		D_RasterizeAliasPolySmooth();
 	}
 }
@@ -1870,10 +1878,14 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 	    (((long)&spans[0] + CACHE_SIZE - 1) & ~(CACHE_SIZE - 1));
 
 	if (r_affinetridesc.drawtype) {
+#if 0
        		printf("%s:%d\n", __func__, __LINE__);
+#endif
 		D_DrawSubdiv();
 	} else {
+#if 0
        		printf("%s:%d\n", __func__, __LINE__);
+#endif
 		D_DrawNonSubdiv();
 	}
 }
@@ -4137,8 +4149,40 @@ int main(int argc, char *argv[])
 {
 	byte *pb;
 	entity_t ent;
-	int i, fd;
+	int i, fd, opt, ret;
 	model_t m;
+	char fname[PATH_MAX];
+	BITMAP *localscreen;
+	PALETTE pal;
+#define WIDTH	640
+#define HEIGHT	480
+	ret = allegro_init();
+	if (ret)
+		return -1;
+	ret = install_keyboard();
+	if (ret)
+		return -1;
+	ret = install_timer();
+	if (ret)
+		return -1;
+	set_color_depth(8);
+	ret = set_gfx_mode(GFX_AUTODETECT_WINDOWED, WIDTH, HEIGHT, 0, 0);
+	if (ret)
+		return -1;
+	localscreen = create_bitmap(WIDTH, HEIGHT);
+	for (i = 0; i < 256; i++) {
+		pal[i].r = i >> 0;
+		pal[i].g = i >> 0;
+		pal[i].b = i >> 0;
+	}
+	set_palette(pal);
+#if 0
+	ret = install_mouse();
+	if (ret)
+		return -1;
+	show_mouse(NULL);
+#endif
+
 	strcpy(m.name, "test");
 	m.needload = true;
 	m.cache.data = NULL;
@@ -4168,9 +4212,9 @@ int main(int argc, char *argv[])
 	vpn[0] = 0.0;
 	vpn[1] = 0.0;
 	vpn[2] = 10.0;
-	d_zwidth = MAXWIDTH;
-	d_pzbuffer = malloc(MAXHEIGHT * MAXROWBYTES * 2);
-	d_viewbuffer = malloc(MAXHEIGHT * MAXROWBYTES * 2);
+	d_zwidth = WIDTH;
+	d_pzbuffer = malloc(HEIGHT * WIDTH * 2);
+	d_viewbuffer = malloc(HEIGHT * WIDTH);
 	for (i=0 ; i < MAXHEIGHT; i++)
 	{
 		d_scantable[i] = i * MAXROWBYTES;
@@ -4178,12 +4222,27 @@ int main(int argc, char *argv[])
 	}
 	r_refdef.aliasvrect.x = 0;
 	r_refdef.aliasvrect.y = 0;
-	r_refdef.aliasvrectbottom = MAXHEIGHT;
-	r_refdef.aliasvrectright = MAXWIDTH;
+	r_refdef.aliasvrectbottom = HEIGHT;
+	r_refdef.aliasvrectright = WIDTH;
 	r_refdef.fvrectx = (float) r_refdef.aliasvrect.x;
 	r_refdef.fvrecty = (float) r_refdef.aliasvrect.y;
 	r_refdef.fvrectright = (float) r_refdef.aliasvrectright;
 	r_refdef.fvrectbottom = (float) r_refdef.aliasvrectbottom;
+	opt = 0;
+	strcpy(fname, "viewbuf.png");
+	while (1) {
+		opt = getopt(argc, argv, "f:");
+		if (opt == -1)
+			break;
+		switch(opt) {
+		case 'f':
+			strncpy(fname, optarg, sizeof(fname));
+			break;
+		}
+	}
+	argc -= optind;
+	argv += optind;
+	printf("Optargs: %d fname = %s\n", argc, fname);
 	for (i = 0; i < argc; i++) {
 		switch(i) {
 		case 0:
@@ -4221,6 +4280,14 @@ int main(int argc, char *argv[])
 		case 11:
 			vup[2] = atof(argv[i]);
 			break;
+		case 12:
+			vpn[0] = atof(argv[i]);
+			break;
+		case 13:
+			vpn[1] = atof(argv[i]);
+			break;
+		case 14:
+			vpn[2] = atof(argv[i]);
 		default:
 			break;
 		}
@@ -4250,9 +4317,52 @@ int main(int argc, char *argv[])
 	r_affinetridesc.numtriangles = 10;
 	D_PolysetDraw();
 #endif
-	memset(d_pzbuffer, 0, MAXHEIGHT * MAXROWBYTES * 2);
-	memset(d_viewbuffer, 0, MAXHEIGHT * MAXROWBYTES * 2);
-	R_AliasDrawModel(&ent);
+	clear_keybuf();
+	ent.origin[0] = 25.0;
+	ent.origin[1] = -123.5;
+	ent.origin[1] = 15.0;
+	aliasxscale = 1.0;
+	aliasyscale = 1.0;
+	vup[1] = 1.0;
+	vright[0] = 1.0;
+	while(1) {
+		memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
+		memset(d_viewbuffer, 0, HEIGHT * WIDTH);
+		R_AliasDrawModel(&ent);
+		for (i = 0; i < HEIGHT; i++)
+			memcpy(localscreen->line[i], d_viewbuffer + WIDTH * i, WIDTH);
+		blit(localscreen, screen, 0, 0, 0, 0, WIDTH, HEIGHT);
+		if (key[KEY_ESC])
+			break;
+		if (key[KEY_LEFT])
+			ent.origin[0] -= 0.1;
+		if (key[KEY_LEFT])
+			ent.origin[0] += 0.1;
+		if (key[KEY_UP])
+			ent.origin[1] -= 0.1;
+		if (key[KEY_DOWN])
+			ent.origin[1] += 0.1;
+		if (key[KEY_A])
+			ent.origin[2] += 0.1;
+		if (key[KEY_Z])
+			ent.origin[2] -= 0.1;
+		if (key[KEY_S])
+			vpn[0] += 0.1;
+		if (key[KEY_X])
+			vpn[0] -= 0.1;
+		if (key[KEY_D])
+			vpn[2] += 0.1;
+		if (key[KEY_C])
+			vpn[2] -= 0.1;
+		if (key[KEY_F])
+			vpn[1] += 0.1;
+		if (key[KEY_V])
+			vpn[1] -= 0.1;
+		
+		ent.frame = ent.frame ^ 1;
+		ent.oldframe = ent.frame;
+
+	}
 	pb = d_viewbuffer;
 	for (i=0; i < MAXHEIGHT * MAXROWBYTES * 1; i++) {
 		if (*pb)
@@ -4265,10 +4375,11 @@ int main(int argc, char *argv[])
 		write(fd, d_viewbuffer, MAXHEIGHT * MAXROWBYTES * 1);
 		close(fd);
 	//	write_xbm("viewbuf", 1280, 1024, d_viewbuffer);
-		write_png_file("viewbuf.png", 1280, 1024, d_viewbuffer);
+		write_png_file(fname, WIDTH, HEIGHT, d_viewbuffer);
 	} else {
-		unlink("viewbuf");
+		unlink("viewbuf.png");
 	}
+	allegro_exit();
 
 	return 0;
 }
