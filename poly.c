@@ -4144,6 +4144,14 @@ void write_png_file(char* file_name, int width,
         fclose(fp);
 }
 
+static void loopfunc(void *data)
+{
+	entity_t *ent = data;
+	memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
+	memset(d_viewbuffer, 0, HEIGHT * WIDTH);
+	R_AliasDrawModel(ent);
+	updatescr(d_viewbuffer);
+}
 
 int main(int argc, char *argv[])
 {
@@ -4152,36 +4160,9 @@ int main(int argc, char *argv[])
 	int i, fd, opt, ret;
 	model_t m;
 	char fname[PATH_MAX];
-	BITMAP *localscreen;
-	PALETTE pal;
+	initgfx();
 #define WIDTH	640
 #define HEIGHT	480
-	ret = allegro_init();
-	if (ret)
-		return -1;
-	ret = install_keyboard();
-	if (ret)
-		return -1;
-	ret = install_timer();
-	if (ret)
-		return -1;
-	set_color_depth(8);
-	ret = set_gfx_mode(GFX_AUTODETECT_WINDOWED, WIDTH, HEIGHT, 0, 0);
-	if (ret)
-		return -1;
-	localscreen = create_bitmap(WIDTH, HEIGHT);
-	for (i = 0; i < 256; i++) {
-		pal[i].r = i >> 0;
-		pal[i].g = i >> 0;
-		pal[i].b = i >> 0;
-	}
-	set_palette(pal);
-#if 0
-	ret = install_mouse();
-	if (ret)
-		return -1;
-	show_mouse(NULL);
-#endif
 
 	strcpy(m.name, "test");
 	m.needload = true;
@@ -4215,9 +4196,9 @@ int main(int argc, char *argv[])
 	d_zwidth = WIDTH;
 	d_pzbuffer = malloc(HEIGHT * WIDTH * 2);
 	d_viewbuffer = malloc(HEIGHT * WIDTH);
-	for (i=0 ; i < MAXHEIGHT; i++)
+	for (i=0 ; i < HEIGHT; i++)
 	{
-		d_scantable[i] = i * MAXROWBYTES;
+		d_scantable[i] = i * WIDTH;
 		zspantable[i] = d_pzbuffer + i*d_zwidth;
 	}
 	r_refdef.aliasvrect.x = 0;
@@ -4317,7 +4298,6 @@ int main(int argc, char *argv[])
 	r_affinetridesc.numtriangles = 10;
 	D_PolysetDraw();
 #endif
-	clear_keybuf();
 	ent.origin[0] = 25.0;
 	ent.origin[1] = -123.5;
 	ent.origin[1] = 15.0;
@@ -4325,15 +4305,8 @@ int main(int argc, char *argv[])
 	aliasyscale = 1.0;
 	vup[1] = 1.0;
 	vright[0] = 1.0;
+	do_key_loop(loopfunc, ent);
 	while(1) {
-		memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
-		memset(d_viewbuffer, 0, HEIGHT * WIDTH);
-		R_AliasDrawModel(&ent);
-		for (i = 0; i < HEIGHT; i++)
-			memcpy(localscreen->line[i], d_viewbuffer + WIDTH * i, WIDTH);
-		blit(localscreen, screen, 0, 0, 0, 0, WIDTH, HEIGHT);
-		if (key[KEY_ESC])
-			break;
 		if (key[KEY_LEFT])
 			ent.origin[0] -= 0.1;
 		if (key[KEY_LEFT])
@@ -4379,7 +4352,7 @@ int main(int argc, char *argv[])
 	} else {
 		unlink("viewbuf.png");
 	}
-	allegro_exit();
+	stopgfx();
 
 	return 0;
 }
