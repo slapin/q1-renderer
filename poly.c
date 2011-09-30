@@ -8,9 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <limits.h>
-#define PNG_DEBUG 3
-#include <png.h>
-#include <allegro.h>
+#include "control.h"
 
 #define MAXHEIGHT 1024
 #define MAXWIDTH 1280
@@ -1153,6 +1151,7 @@ Referenced by D_DrawSubdiv().
 		printf("%p = %d\n", &d_viewbuffer[d_scantable[new[1]] + new[0]], pix);
 #endif
 		d_viewbuffer[d_scantable[new[1]] + new[0]] = pix;
+		printf("plot %d %d %d = %d\n", new[1], d_scantable[new[1]], new[0], pix);
 	}
 
  nodraw:
@@ -1409,6 +1408,10 @@ Referenced by D_RasterizeAliasPolySmooth().
 								  0xFF00)];
 // gel mapping                  *lpdest = gelmap[*lpdest];
 					*lpz = lzi >> 16;
+					printf("plot %d %d = %d\n", (lpdest -
+					d_viewbuffer) % WIDTH, (lpdest -
+					d_viewbuffer) / WIDTH, ((byte *)
+					acolormap)[*lptex + (llight & 0xFF00)]);
 				}
 				lpdest++;
 				lzi += r_zistepx;
@@ -1439,6 +1442,7 @@ References spanpackage_t::count, d_aspancount, d_countextrastep, d_light, d_ligh
 Referenced by D_RasterizeAliasPolySmooth().
 */
 {
+	printf("plot steps base %d extra %d\n", d_pdestbasestep, d_pdestextrastep);
 
 	do {
 		d_pedgespanpackage->pdest = d_pdest;
@@ -1592,6 +1596,7 @@ Referenced by D_DrawNonSubdiv().
 //
 	D_PolysetCalcGradients(r_affinetridesc.skinwidth);
 
+	printf("%s:%d: plot left height = %d right height = %d\n", __func__, __LINE__, initialleftheight, initialrightheight);
 //
 // rasterize the polygon
 //
@@ -2556,6 +2561,9 @@ Referenced by R_AliasPrepareUnclippedPoints().
 							 (fv->v[4] & 0xFF00)];
 				d_viewbuffer[d_scantable[fv->v[1]] + fv->v[0]] =
 				    pix;
+				printf("plot %d %d %d = %d\n", fv->v[1], d_scantable[fv->v[1]], fv->v[0], pix);
+			} else {
+				printf("zbuffer\n");
 			}
 		}
 	}
@@ -4085,84 +4093,27 @@ static void write_xbm(char *name, int width,
 	free(buf);
 }
 
-void write_png_file(char* file_name, int width,
-		int height,
-		const unsigned char *buffer)
-{
-	png_structp png_ptr;
-	png_infop info_ptr;
-	unsigned char **row_pointers = malloc(height * sizeof(unsigned char *));
-	int i;
-        /* create file */
-        FILE *fp = fopen(file_name, "wb");
-        if (!fp)
-		return;
-	for (i = 0; i < height; i++)
-		row_pointers[i] = buffer + width * i;
-
-
-        /* initialize stuff */
-        png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-
-        if (!png_ptr)
-		return;
-
-        info_ptr = png_create_info_struct(png_ptr);
-        if (!info_ptr)
-		return;
-
-        if (setjmp(png_jmpbuf(png_ptr)))
-		return;
-
-        png_init_io(png_ptr, fp);
-
-
-        /* write header */
-        if (setjmp(png_jmpbuf(png_ptr)))
-		return;
-
-        png_set_IHDR(png_ptr, info_ptr, width, height,
-                     8, PNG_COLOR_TYPE_GRAY, PNG_INTERLACE_NONE,
-                     PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
-
-        png_write_info(png_ptr, info_ptr);
-
-
-        /* write bytes */
-        if (setjmp(png_jmpbuf(png_ptr)))
-		return;
-
-        png_write_image(png_ptr, row_pointers);
-
-
-        /* end write */
-        if (setjmp(png_jmpbuf(png_ptr)))
-		return;
-
-        png_write_end(png_ptr, NULL);
-
-        fclose(fp);
-}
-
 static void loopfunc(void *data)
 {
-	entity_t *ent = data;
+	struct control_data *cd = data;
+	entity_t *ent = cd->data;
 	memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
 	memset(d_viewbuffer, 0, HEIGHT * WIDTH);
 	R_AliasDrawModel(ent);
 	updatescr(d_viewbuffer);
+	ent->frame = ent->frame ^ 1;
+	ent->oldframe = ent->frame;
 }
 
 int main(int argc, char *argv[])
 {
 	byte *pb;
 	entity_t ent;
+	struct control_data *cd;
 	int i, fd, opt, ret;
 	model_t m;
 	char fname[PATH_MAX];
 	initgfx();
-#define WIDTH	640
-#define HEIGHT	480
 
 	strcpy(m.name, "test");
 	m.needload = true;
@@ -4194,8 +4145,9 @@ int main(int argc, char *argv[])
 	vpn[1] = 0.0;
 	vpn[2] = 10.0;
 	d_zwidth = WIDTH;
-	d_pzbuffer = malloc(HEIGHT * WIDTH * 2);
+	d_pzbuffer = malloc(HEIGHT * WIDTH * 4);
 	d_viewbuffer = malloc(HEIGHT * WIDTH);
+	screenwidth = WIDTH;
 	for (i=0 ; i < HEIGHT; i++)
 	{
 		d_scantable[i] = i * WIDTH;
@@ -4305,47 +4257,24 @@ int main(int argc, char *argv[])
 	aliasyscale = 1.0;
 	vup[1] = 1.0;
 	vright[0] = 1.0;
-	do_key_loop(loopfunc, ent);
-	while(1) {
-		if (key[KEY_LEFT])
-			ent.origin[0] -= 0.1;
-		if (key[KEY_LEFT])
-			ent.origin[0] += 0.1;
-		if (key[KEY_UP])
-			ent.origin[1] -= 0.1;
-		if (key[KEY_DOWN])
-			ent.origin[1] += 0.1;
-		if (key[KEY_A])
-			ent.origin[2] += 0.1;
-		if (key[KEY_Z])
-			ent.origin[2] -= 0.1;
-		if (key[KEY_S])
-			vpn[0] += 0.1;
-		if (key[KEY_X])
-			vpn[0] -= 0.1;
-		if (key[KEY_D])
-			vpn[2] += 0.1;
-		if (key[KEY_C])
-			vpn[2] -= 0.1;
-		if (key[KEY_F])
-			vpn[1] += 0.1;
-		if (key[KEY_V])
-			vpn[1] -= 0.1;
-		
-		ent.frame = ent.frame ^ 1;
-		ent.oldframe = ent.frame;
-
-	}
+	cd = malloc(sizeof(struct control_data));
+	memset(cd, 0, sizeof(struct control_data));
+	cd->data = &ent;
+	cd->origin = ent.origin;
+	cd->vup = vup;
+	cd->vright = vright;
+	cd->vpn = vpn;
+	do_key_loop(loopfunc, cd);
 	pb = d_viewbuffer;
-	for (i=0; i < MAXHEIGHT * MAXROWBYTES * 1; i++) {
+	for (i=0; i < HEIGHT * WIDTH * 1; i++) {
 		if (*pb)
 			break;
 		pb++;
 	}
 	
-	if (*pb) {
+	if ((pb - d_viewbuffer < WIDTH * HEIGHT) && *pb) {
 		fd = open("viewbuf", O_CREAT|O_RDWR|O_TRUNC, 0644);
-		write(fd, d_viewbuffer, MAXHEIGHT * MAXROWBYTES * 1);
+		write(fd, d_viewbuffer, HEIGHT * WIDTH * 1);
 		close(fd);
 	//	write_xbm("viewbuf", 1280, 1024, d_viewbuffer);
 		write_png_file(fname, WIDTH, HEIGHT, d_viewbuffer);
