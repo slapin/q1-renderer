@@ -1,0 +1,3 @@
+use qwalk
+svn co svn://svn.icculus.org/qshed/trunk/qwalk qwalk
+
