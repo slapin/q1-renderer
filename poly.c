@@ -95,13 +95,11 @@ static affinetridesc_t r_affinetridesc;
 static spanpackage_t *a_spans;
 static spanpackage_t *d_pedgespanpackage;
 
-static byte *d_pcolormap;
 static void *acolormap;
 static int d_xdenom;
 static int r_p0[6], r_p1[6], r_p2[6];
 static int ystart;
 static int d_aspancount;
-static byte *d_ptex;
 static int d_sfrac, d_tfrac;
 static int d_pzbasestep;
 static int d_pzextrastep;
@@ -110,8 +108,6 @@ static int d_zi;
 static int d_pdestbasestep;
 static int screenwidth;
 static int d_pdestextrastep;
-static byte *d_pdest;
-static pixel_t *d_viewbuffer;
 static short *d_pz;
 static short *d_pzbuffer;
 static int r_lstepx;
@@ -1072,7 +1068,7 @@ static float r_fullbrightSkins;
 
 /* end of r_alias symbols */
 
-void D_PolysetRecursiveTriangle(int *lp1, int *lp2, int *lp3)
+void D_PolysetRecursiveTriangle(int *lp1, int *lp2, int *lp3, byte *d_pcolormap, pixel_t *d_viewbuffer)
 /*
 Definition at line 334 of file d_polyse.c.
 
@@ -1156,11 +1152,11 @@ Referenced by D_DrawSubdiv().
 
  nodraw:
 // recursively continue
-	D_PolysetRecursiveTriangle(lp3, lp1, new);
-	D_PolysetRecursiveTriangle(lp3, new, lp2);
+	D_PolysetRecursiveTriangle(lp3, lp1, new, d_pcolormap, d_viewbuffer);
+	D_PolysetRecursiveTriangle(lp3, new, lp2, d_pcolormap, d_viewbuffer);
 }
 
-static void D_DrawSubdiv()
+static void D_DrawSubdiv(pixel_t *d_viewbuffer)
 /*
 Definition at line 190 of file d_polyse.c.
 
@@ -1173,6 +1169,7 @@ Referenced by D_PolysetDraw().
 	finalvert_t *pfv, *index0, *index1, *index2;
 	int i;
 	int lnumtriangles;
+	byte *d_pcolormap;
 
 	pfv = r_affinetridesc.pfinalverts;
 	ptri = r_affinetridesc.ptriangles;
@@ -1215,7 +1212,7 @@ Referenced by D_PolysetDraw().
         			printf("%s:%d\n", __func__, __LINE__);
 #endif
 				D_PolysetRecursiveTriangle(index0->v, index1->v,
-							   index2->v);
+							   index2->v, d_pcolormap, d_viewbuffer);
 			} else {
 				int s0, s1, s2;
 
@@ -1234,7 +1231,7 @@ Referenced by D_PolysetDraw().
 					    r_affinetridesc.seamfixupX16;
 
 				D_PolysetRecursiveTriangle(index0->v, index1->v,
-							   index2->v);
+							   index2->v, d_pcolormap, d_viewbuffer);
 
 				index0->v[2] = s0;
 				index1->v[2] = s1;
@@ -1363,7 +1360,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	a_ststepxwhole = skinwidth * (r_tstepx >> 16) + (r_sstepx >> 16);
 }
 
-void D_PolysetDrawSpans8(spanpackage_t * pspanpackage)
+void D_PolysetDrawSpans8(spanpackage_t * pspanpackage, pixel_t *d_viewbuffer)
 /*
 Definition at line 634 of file d_polyse.c.
 
@@ -1433,7 +1430,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	} while (pspanpackage->count != -999999);
 }
 
-void D_PolysetScanLeftEdge(int height)
+void D_PolysetScanLeftEdge(int height, byte *d_pdest, byte *d_ptex)
 /*
 Definition at line 443 of file d_polyse.c.
 
@@ -1568,7 +1565,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	}
 }
 
-static void D_RasterizeAliasPolySmooth(void)
+static void D_RasterizeAliasPolySmooth(pixel_t *d_viewbuffer)
 /*
 Definition at line 742 of file d_polyse.c.
 
@@ -1577,6 +1574,8 @@ References a_spans, spanpackage_t::count, d_aspancount, d_countextrastep, d_ligh
 Referenced by D_DrawNonSubdiv().
 */
 {
+	byte *d_pdest;
+	byte *d_ptex;
 	int initialleftheight, initialrightheight;
 	int *plefttop, *prighttop, *pleftbottom, *prightbottom;
 	int working_lstepx, originalcount;
@@ -1670,7 +1669,7 @@ Referenced by D_DrawNonSubdiv().
 	d_lightextrastep = d_lightbasestep + working_lstepx;
 	d_ziextrastep = d_zibasestep + r_zistepx;
 
-	D_PolysetScanLeftEdge(initialleftheight);
+	D_PolysetScanLeftEdge(initialleftheight, d_pdest, d_ptex);
 
 //
 // scan out the bottom part of the left edge, if it exists
@@ -1748,7 +1747,7 @@ Referenced by D_DrawNonSubdiv().
 		d_lightextrastep = d_lightbasestep + working_lstepx;
 		d_ziextrastep = d_zibasestep + r_zistepx;
 
-		D_PolysetScanLeftEdge(height);
+		D_PolysetScanLeftEdge(height, d_pdest, d_ptex);
 	}
 // scan out the top (and possibly only) part of the right edge, updating the
 // count field
@@ -1760,7 +1759,7 @@ Referenced by D_DrawNonSubdiv().
 	d_countextrastep = ubasestep + 1;
 	originalcount = a_spans[initialrightheight].count;
 	a_spans[initialrightheight].count = -999999;	// mark end of the spanpackages
-	D_PolysetDrawSpans8(a_spans);
+	D_PolysetDrawSpans8(a_spans, d_viewbuffer);
 
 #if 0
        	printf("%s:%d\n", __func__, __LINE__);
@@ -1789,11 +1788,11 @@ Referenced by D_DrawNonSubdiv().
 #if 0
        		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_PolysetDrawSpans8(pstart);
+		D_PolysetDrawSpans8(pstart, d_viewbuffer);
 	}
 }
 
-static void D_DrawNonSubdiv(void)
+static void D_DrawNonSubdiv(pixel_t *d_viewbuffer)
 /*
 Definition at line 266 of file d_polyse.c.
 
@@ -1862,11 +1861,11 @@ Referenced by D_PolysetDraw().
 #if 0
        		printf("%s:%d running D_RasterizeAliasPolySmooth()\n", __func__, __LINE__);
 #endif
-		D_RasterizeAliasPolySmooth();
+		D_RasterizeAliasPolySmooth(d_viewbuffer);
 	}
 }
 
-static void D_PolysetDraw(void)
+static void D_PolysetDraw(pixel_t *d_viewbuffer)
 /*
 Definition at line 132 of file d_polyse.c.
 
@@ -1886,12 +1885,12 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 #if 0
        		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_DrawSubdiv();
+		D_DrawSubdiv(d_viewbuffer);
 	} else {
 #if 0
        		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_DrawNonSubdiv();
+		D_DrawNonSubdiv(d_viewbuffer);
 	}
 }
 
@@ -2214,7 +2213,7 @@ Referenced by R_AliasClipTriangle().
 	}
 }
 
-static void R_AliasClipTriangle(mtriangle_t * ptri)
+static void R_AliasClipTriangle(mtriangle_t * ptri, pixel_t *d_viewbuffer)
 /*
 Definition at line 245 of file r_aclip.c.
 
@@ -2389,11 +2388,11 @@ Referenced by R_AliasPreparePoints().
 	for (i = 1; i < k - 1; i++) {
 		mtri.vertindex[1] = i;
 		mtri.vertindex[2] = i + 1;
-		D_PolysetDraw();
+		D_PolysetDraw(d_viewbuffer);
 	}
 }
 
-static void R_AliasPreparePoints(void)
+static void R_AliasPreparePoints(pixel_t *d_viewbuffer)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2460,11 +2459,11 @@ Referenced by R_AliasDrawModel().
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
         		printf("%s:%d unclipped\n", __func__, __LINE__);
-			D_PolysetDraw();
+			D_PolysetDraw(d_viewbuffer);
 		} else {
 			// partially clipped
         		printf("%s:%d partially clipped\n", __func__, __LINE__);
-			R_AliasClipTriangle(ptri);
+			R_AliasClipTriangle(ptri, d_viewbuffer);
 		}
 	}
 }
@@ -2532,7 +2531,7 @@ Referenced by R_AliasPrepareUnclippedPoints().
 	}
 }
 
-static void D_PolysetDrawFinalVerts(finalvert_t * fv, int numverts)
+static void D_PolysetDrawFinalVerts(finalvert_t * fv, int numverts, pixel_t *d_viewbuffer)
 /*
 Definition at line 157 of file d_polyse.c.
 
@@ -2569,7 +2568,7 @@ Referenced by R_AliasPrepareUnclippedPoints().
 	}
 }
 
-static void R_AliasPrepareUnclippedPoints(void)
+static void R_AliasPrepareUnclippedPoints(pixel_t *d_viewbuffer)
 /*
 Definition at line 466 of file r_alias.c.
 
@@ -2586,14 +2585,14 @@ Referenced by R_AliasDrawModel().
 	R_AliasTransformAndProjectFinalVerts(pfinalverts, pstverts);
 
 	if (r_affinetridesc.drawtype)
-		D_PolysetDrawFinalVerts(pfinalverts, r_anumverts);
+		D_PolysetDrawFinalVerts(pfinalverts, r_anumverts, d_viewbuffer);
 
 	r_affinetridesc.pfinalverts = pfinalverts;
 	r_affinetridesc.ptriangles =
 	    (mtriangle_t *) ((byte *) paliashdr + paliashdr->triangles);
 	r_affinetridesc.numtriangles = pmdl->numtris;
 
-	D_PolysetDraw();
+	D_PolysetDraw(d_viewbuffer);
 }
 
 #if 0
@@ -3299,6 +3298,7 @@ static int dump_matrix(char *func, int l, char *prefix, char *m, float matrix[3]
 	for (i = 0; i < 3; i++)
 		for (j = 0; j < 4; j++)
 			printf("%s:%d %s: %s[%d][%d] = %f\n", func, l, prefix, m, i, j, matrix[i][j]);
+	return 0;
 }
 
 #define DUMP_MATRIX(m) dump_matrix(__func__, __LINE__, "matrix", #m, m);
@@ -3970,7 +3970,7 @@ void D_PolysetUpdateTables(void)
 	}
 }
 
-static void R_AliasDrawModel(entity_t * ent)
+static void R_AliasDrawModel(entity_t * ent, pixel_t *d_viewbuffer)
 /*
 Definition at line 629 of file r_alias.c.
 
@@ -4052,9 +4052,9 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	printf("ent->trivial_accept = %d\n", ent->trivial_accept);
 
 	if (ent->trivial_accept)
-		R_AliasPrepareUnclippedPoints();
+		R_AliasPrepareUnclippedPoints(d_viewbuffer);
 	else
-		R_AliasPreparePoints();
+		R_AliasPreparePoints(d_viewbuffer);
         printf("%s:%d\n", __func__, __LINE__);
 }
 
@@ -4097,12 +4097,13 @@ static void loopfunc(void *data)
 {
 	struct control_data *cd = data;
 	entity_t *ent = cd->data;
+	pixel_t *d_viewbuffer = cd->view;
 	memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
 	memset(d_viewbuffer, 0, HEIGHT * WIDTH);
-	R_AliasDrawModel(ent);
+	R_AliasDrawModel(ent, d_viewbuffer);
 	updatescr(d_viewbuffer);
-	ent->frame = ent->frame ^ 1;
-	ent->oldframe = ent->frame;
+//	ent->frame = ent->frame ^ 1;
+//	ent->oldframe = ent->frame;
 }
 
 int main(int argc, char *argv[])
@@ -4113,6 +4114,7 @@ int main(int argc, char *argv[])
 	int i, fd, opt, ret;
 	model_t m;
 	char fname[PATH_MAX];
+	pixel_t *d_viewbuffer;
 	initgfx();
 
 	strcpy(m.name, "test");
@@ -4264,6 +4266,7 @@ int main(int argc, char *argv[])
 	cd->vup = vup;
 	cd->vright = vright;
 	cd->vpn = vpn;
+	cd->view = d_viewbuffer;
 	do_key_loop(loopfunc, cd);
 	pb = d_viewbuffer;
 	for (i=0; i < HEIGHT * WIDTH * 1; i++) {

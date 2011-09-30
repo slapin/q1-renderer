@@ -17,6 +17,7 @@ struct control_data {
 	struct control_key keys[MAX_KEYS];
 	int nkeys;
 	void *data;
+	void *view;
 };
 #define WIDTH	640
 #define HEIGHT	480
