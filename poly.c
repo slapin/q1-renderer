@@ -865,7 +865,6 @@ static int r_lerpframes = 1;
 static float r_framelerp;
 static int r_amodels_drawn;
 static float ziscale;
-static entity_t *currententity;
 static float r_lerpdistance;
 static float aliastransform[3][4];
 static float r_avertexnormals[NUMVERTEXNORMALS][3] = {
@@ -1915,7 +1914,7 @@ do {                                                                \
 
 #define DotProduct(x,y)         ((x)[0] * (y)[0] + (x)[1] * (y)[1] + (x)[2] * (y)[2])
 
-static void R_AliasTransformFinalVert(finalvert_t * fv, auxvert_t * av,
+static void R_AliasTransformFinalVert(entity_t *ent, finalvert_t * fv, auxvert_t * av,
 				      trivertx_t * pverts1,
 				      trivertx_t * pverts2, stvert_t * pstverts)
 /*
@@ -1931,7 +1930,7 @@ Referenced by R_AliasPreparePoints().
 	vec3_t interpolated_verts, interpolated_norm;
 
 	lerpfrac = r_framelerp;
-	if ((currententity->renderfx & RF_LIMITLERP)) {
+	if ((ent->renderfx & RF_LIMITLERP)) {
 
 		lerpfrac =
 		    VectorL2Compare(pverts1->v, pverts2->v,
@@ -2392,7 +2391,7 @@ Referenced by R_AliasPreparePoints().
 	}
 }
 
-static void R_AliasPreparePoints(pixel_t *d_viewbuffer)
+static void R_AliasPreparePoints(entity_t *ent, pixel_t *d_viewbuffer)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2416,7 +2415,7 @@ Referenced by R_AliasDrawModel().
 
 	for (i = 0; i < r_anumverts;
 	     i++, fv++, av++, r_oldapverts++, r_apverts++, pstverts++) {
-		R_AliasTransformFinalVert(fv, av, r_oldapverts, r_apverts,
+		R_AliasTransformFinalVert(ent, fv, av, r_oldapverts, r_apverts,
 					  pstverts);
 		if (av->fv[2] < 1.f) {
 			fv->flags |= ALIAS_Z_CLIP;
@@ -3304,7 +3303,7 @@ static int dump_matrix(char *func, int l, char *prefix, char *m, float matrix[3]
 #define DUMP_MATRIX(m) dump_matrix(__func__, __LINE__, "matrix", #m, m);
 
 
-static void R_AliasSetUpTransform(int trivial_accept)
+static void R_AliasSetUpTransform(entity_t *ent, int trivial_accept)
 /*
 Definition at line 122 of file r_alias.c.
 
@@ -3321,16 +3320,16 @@ References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP,
 	// TODO: should use a look-up table
 	// TODO: could cache lazily, stored in the entity
 
-	angles[ROLL] = currententity->angles[ROLL];
-	angles[PITCH] = -currententity->angles[PITCH];
-	angles[YAW] = currententity->angles[YAW];
+	angles[ROLL] = ent->angles[ROLL];
+	angles[PITCH] = -ent->angles[PITCH];
+	angles[YAW] = ent->angles[YAW];
 	AngleVectors(angles, alias_forward, alias_right, alias_up);
 
 	tmatrix[0][0] = pmdl->scale[0];
 	tmatrix[1][1] = pmdl->scale[1];
 	tmatrix[2][2] = pmdl->scale[2];
 
-	if ((currententity->renderfx & RF_WEAPONMODEL)) {
+	if ((ent->renderfx & RF_WEAPONMODEL)) {
 		scale = 0.5 + bound(0, r_viewmodelsize, 1) / 2;
 		tmatrix[0][0] *= scale;
 	}
@@ -3454,7 +3453,7 @@ Referenced by R_AliasDrawModel().
 	ent->trivial_accept = 0;
 
 	// expand, rotate, and translate points into worldspace
-	R_AliasSetUpTransform(0);
+	R_AliasSetUpTransform(ent, 0);
 #if 0
 	for (j = 0; j < 3; j++)
 		for (k = 0; k < 4; k++)
@@ -3856,14 +3855,14 @@ Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
 	float add, fbskins;
 	vec3_t dist;
 
-	ambientlight = shadelight = R_LightPoint(currententity->origin);
+	ambientlight = shadelight = R_LightPoint(ent->origin);
 
 	for (lnum = 0; lnum < MAX_DLIGHTS; lnum++) {
 		if (cl_dlights[lnum].die < r_refdef2.time
 		    || !cl_dlights[lnum].radius)
 			continue;
 
-		VectorSubtract(currententity->origin, cl_dlights[lnum].origin,
+		VectorSubtract(ent->origin, cl_dlights[lnum].origin,
 			       dist);
 		add = cl_dlights[lnum].radius - VectorLength(dist);
 
@@ -3878,18 +3877,18 @@ Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
 		shadelight = 192 - ambientlight;
 
 	// always give the gun some light
-	if ((currententity->renderfx & RF_WEAPONMODEL) && ambientlight < 24)
+	if ((ent->renderfx & RF_WEAPONMODEL) && ambientlight < 24)
 		ambientlight = shadelight = 24;
 
 	// never allow players to go totally black
-	if (currententity->model->modhint == MOD_PLAYER
-	    || currententity->renderfx & RF_PLAYERMODEL) {
+	if (ent->model->modhint == MOD_PLAYER
+	    || ent->renderfx & RF_PLAYERMODEL) {
 		if (ambientlight < 8)
 			ambientlight = shadelight = 8;
 	}
 
-	if (currententity->model->modhint == MOD_PLAYER
-	    || currententity->renderfx & RF_PLAYERMODEL) {
+	if (ent->model->modhint == MOD_PLAYER
+	    || ent->renderfx & RF_PLAYERMODEL) {
 		fbskins = bound(0, r_fullbrightSkins, r_refdef2.max_fbskins);
 		if (fbskins) {
 			ambientlight = max(ambientlight, 8 + fbskins * 120);
@@ -4024,7 +4023,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
         printf("%s:%d\n", __func__, __LINE__);
 	R_AliasSetupSkin(ent);
-	R_AliasSetUpTransform(ent->trivial_accept);
+	R_AliasSetUpTransform(ent, ent->trivial_accept);
 	R_AliasSetupLighting(ent);
 	R_AliasSetupFrame(ent);
 
@@ -4054,7 +4053,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	if (ent->trivial_accept)
 		R_AliasPrepareUnclippedPoints(d_viewbuffer);
 	else
-		R_AliasPreparePoints(d_viewbuffer);
+		R_AliasPreparePoints(ent, d_viewbuffer);
         printf("%s:%d\n", __func__, __LINE__);
 }
 
@@ -4134,7 +4133,6 @@ int main(int argc, char *argv[])
 	ent.skinnum = 0;
 	ent.colormap = malloc(sizeof(pixel_t) * 256);
 	memset(ent.colormap, 0xff, sizeof(pixel_t) * 256);
-	currententity = &ent;
 	aliasxscale = 100.0;
 	aliasyscale = 100.0;
 	vright[0] = 10.0;
