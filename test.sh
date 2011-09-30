@@ -1,7 +1,7 @@
 #!/bin/bash
 
 rpoly() {
-	./poly $2 $3 $4 $5 $6 || {
+	./poly-null $2 $3 $4 $5 $6 || {
 		echo $2 $3 $4 $5 $6 - $? >> fault.log
 		gdb --args ./poly $2 $3 $4 $5 $6 
 		return
