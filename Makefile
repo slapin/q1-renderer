@@ -1,4 +1,4 @@
-CFLAGS = -g -ggdb2 -O0 -Wall
+CFLAGS = -g -ggdb2 -O0 -Wall -Wuninitialized
 all: poly poly-null
 poly: poly.o main.o
 	$(CC) $(CFLAGS) -o poly main.o poly.o -lpng -lm `allegro-config --libs`
