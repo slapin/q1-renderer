@@ -112,7 +112,6 @@ static short *d_pz;
 static short *d_pzbuffer;
 static int r_lstepx;
 static int d_countextrastep;
-static int d_ptexbasestep;
 static int r_sstepy;
 static int r_sstepx;
 static int r_tstepy;
@@ -124,7 +123,6 @@ static int r_lstepy;
 static int d_zibasestep;
 static int r_zistepy;
 static int r_zistepx;
-static int d_ptexextrastep;
 static int d_sfracextrastep;
 static int d_tfracextrastep;
 static int d_lightextrastep;
@@ -134,7 +132,6 @@ static int a_tstepxfrac;
 static int a_ststepxwhole;
 
 static unsigned int d_zwidth;
-static int ubasestep;
 static int errorterm, erroradjustup, erroradjustdown;
 
 static edgetable *pedgetable;
@@ -1359,7 +1356,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	a_ststepxwhole = skinwidth * (r_tstepx >> 16) + (r_sstepx >> 16);
 }
 
-void D_PolysetDrawSpans8(spanpackage_t * pspanpackage, pixel_t *d_viewbuffer)
+void D_PolysetDrawSpans8(spanpackage_t * pspanpackage, pixel_t *d_viewbuffer, int ubasestep)
 /*
 Definition at line 634 of file d_polyse.c.
 
@@ -1429,7 +1426,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	} while (pspanpackage->count != -999999);
 }
 
-void D_PolysetScanLeftEdge(int height, byte *d_pdest, byte *d_ptex)
+void D_PolysetScanLeftEdge(int height, byte *d_pdest, byte *d_ptex, int d_ptexbasestep, int d_ptexextrastep, int ubasestep)
 /*
 Definition at line 443 of file d_polyse.c.
 
@@ -1529,7 +1526,7 @@ Referenced by D_PolysetSetUpForLineScan().
 }
 
 void D_PolysetSetUpForLineScan(fixed8_t startvertu, fixed8_t startvertv,
-			       fixed8_t endvertu, fixed8_t endvertv)
+			       fixed8_t endvertu, fixed8_t endvertv, int *pubasestep)
 /*
 Definition at line 512 of file d_polyse.c.
 
@@ -1541,6 +1538,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	double dm, dn;
 	int tm, tn;
 	adivtab_t *ptemp;
+	int ubasestep;
 
 // TODO: implement x86 version
 
@@ -1562,6 +1560,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 
 		erroradjustdown = dn;
 	}
+	*pubasestep = ubasestep;
 }
 
 static void D_RasterizeAliasPolySmooth(pixel_t *d_viewbuffer)
@@ -1578,6 +1577,9 @@ Referenced by D_DrawNonSubdiv().
 	int initialleftheight, initialrightheight;
 	int *plefttop, *prighttop, *pleftbottom, *prightbottom;
 	int working_lstepx, originalcount;
+	int d_ptexbasestep;
+	int d_ptexextrastep;
+	int ubasestep;
 
 	plefttop = pedgetable->pleftedgevert0;
 	prighttop = pedgetable->prightedgevert0;
@@ -1603,7 +1605,7 @@ Referenced by D_DrawNonSubdiv().
 // scan out the top (and possibly only) part of the left edge
 //
 	D_PolysetSetUpForLineScan(plefttop[0], plefttop[1],
-				  pleftbottom[0], pleftbottom[1]);
+				  pleftbottom[0], pleftbottom[1], &ubasestep);
 
 	d_pedgespanpackage = a_spans;
 
@@ -1668,7 +1670,7 @@ Referenced by D_DrawNonSubdiv().
 	d_lightextrastep = d_lightbasestep + working_lstepx;
 	d_ziextrastep = d_zibasestep + r_zistepx;
 
-	D_PolysetScanLeftEdge(initialleftheight, d_pdest, d_ptex);
+	D_PolysetScanLeftEdge(initialleftheight, d_pdest, d_ptex, d_ptexbasestep, d_ptexextrastep, ubasestep);
 
 //
 // scan out the bottom part of the left edge, if it exists
@@ -1680,7 +1682,7 @@ Referenced by D_DrawNonSubdiv().
 		pleftbottom = pedgetable->pleftedgevert2;
 
 		D_PolysetSetUpForLineScan(plefttop[0], plefttop[1],
-					  pleftbottom[0], pleftbottom[1]);
+					  pleftbottom[0], pleftbottom[1], &ubasestep);
 
 		height = pleftbottom[1] - plefttop[1];
 
@@ -1746,19 +1748,19 @@ Referenced by D_DrawNonSubdiv().
 		d_lightextrastep = d_lightbasestep + working_lstepx;
 		d_ziextrastep = d_zibasestep + r_zistepx;
 
-		D_PolysetScanLeftEdge(height, d_pdest, d_ptex);
+		D_PolysetScanLeftEdge(height, d_pdest, d_ptex, d_ptexbasestep, d_ptexextrastep, ubasestep);
 	}
 // scan out the top (and possibly only) part of the right edge, updating the
 // count field
 	d_pedgespanpackage = a_spans;
 
 	D_PolysetSetUpForLineScan(prighttop[0], prighttop[1],
-				  prightbottom[0], prightbottom[1]);
+				  prightbottom[0], prightbottom[1], &ubasestep);
 	d_aspancount = 0;
 	d_countextrastep = ubasestep + 1;
 	originalcount = a_spans[initialrightheight].count;
 	a_spans[initialrightheight].count = -999999;	// mark end of the spanpackages
-	D_PolysetDrawSpans8(a_spans, d_viewbuffer);
+	D_PolysetDrawSpans8(a_spans, d_viewbuffer, ubasestep);
 
 #if 0
        	printf("%s:%d\n", __func__, __LINE__);
@@ -1779,7 +1781,7 @@ Referenced by D_DrawNonSubdiv().
 		height = prightbottom[1] - prighttop[1];
 
 		D_PolysetSetUpForLineScan(prighttop[0], prighttop[1],
-					  prightbottom[0], prightbottom[1]);
+					  prightbottom[0], prightbottom[1], &ubasestep);
 
 		d_countextrastep = ubasestep + 1;
 		a_spans[initialrightheight + height].count = -999999;
@@ -1787,7 +1789,7 @@ Referenced by D_DrawNonSubdiv().
 #if 0
        		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_PolysetDrawSpans8(pstart, d_viewbuffer);
+		D_PolysetDrawSpans8(pstart, d_viewbuffer, ubasestep);
 	}
 }
 
