@@ -11,9 +11,9 @@ struct control_key {
 
 struct control_data {
 	float *origin;
-	float *vup;
-	float *vright;
-	float *vpn;
+	float *yaw;
+	float *pitch;
+	float *roll;
 	struct control_key keys[MAX_KEYS];
 	int nkeys;
 	void *data;
