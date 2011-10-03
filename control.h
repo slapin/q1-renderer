@@ -18,6 +18,7 @@ struct control_data {
 	int nkeys;
 	void *data;
 	void *view;
+	void *zbuffer;
 };
 #define WIDTH	640
 #define HEIGHT	480
