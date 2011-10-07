@@ -108,7 +108,6 @@ static int screenwidth;
 static int d_pdestextrastep;
 static short *d_pz;
 static int r_lstepx;
-static int d_countextrastep;
 static int r_sstepy;
 static int r_sstepx;
 static int r_tstepy;
@@ -124,9 +123,6 @@ static int d_sfracextrastep;
 static int d_tfracextrastep;
 static int d_lightextrastep;
 static int d_ziextrastep;
-static int a_sstepxfrac;
-static int a_tstepxfrac;
-static int a_ststepxwhole;
 
 static unsigned int d_zwidth;
 
@@ -1288,7 +1284,18 @@ Referenced by D_DrawNonSubdiv().
 	pedgetable = &edgetables[edgetableindex];
 }
 
-static void D_PolysetCalcGradients(int skinwidth)
+struct r_state {
+	int ubasestep;
+	int d_aspancount;
+	int erroradjustup;
+	int erroradjustdown;
+	int errorterm;
+	int d_countextrastep;
+	int a_ststepxwhole;
+	int a_sstepxfrac;
+	int a_tstepxfrac;
+};
+static void D_PolysetCalcGradients(int skinwidth, struct r_state *r)
 /*
 Definition at line 553 of file d_polyse.c.
 
@@ -1342,25 +1349,18 @@ Referenced by D_RasterizeAliasPolySmooth().
 			  ystepdenominv);
 
 #if id386
-	a_sstepxfrac = r_sstepx << 16;
-	a_tstepxfrac = r_tstepx << 16;
+	r->a_sstepxfrac = r_sstepx << 16;
+	r->a_tstepxfrac = r_tstepx << 16;
 #else
-	a_sstepxfrac = r_sstepx & 0xFFFF;
-	a_tstepxfrac = r_tstepx & 0xFFFF;
+	r->a_sstepxfrac = r_sstepx & 0xFFFF;
+	r->a_tstepxfrac = r_tstepx & 0xFFFF;
 #endif
 
-	a_ststepxwhole = skinwidth * (r_tstepx >> 16) + (r_sstepx >> 16);
+	r->a_ststepxwhole = skinwidth * (r_tstepx >> 16) + (r_sstepx >> 16);
 }
 
-struct r_state {
-	int ubasestep;
-	int d_aspancount;
-	int erroradjustup;
-	int erroradjustdown;
-	int errorterm;
-};
 
-static void D_PolysetDrawSpans8(spanpackage_t * pspanpackage, pixel_t *d_viewbuffer, struct r_state *r, byte *acolormap)
+static void D_PolysetDrawSpans8(spanpackage_t * pspanpackage, pixel_t *d_viewbuffer, struct r_state *r, byte *acolormap, int skinwidth)
 /*
 Definition at line 634 of file d_polyse.c.
 
@@ -1382,7 +1382,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 
 		r->errorterm += r->erroradjustup;
 		if (r->errorterm >= 0) {
-			r->d_aspancount += d_countextrastep;
+			r->d_aspancount += r->d_countextrastep;
 			r->errorterm -= r->erroradjustdown;
 		} else {
 			r->d_aspancount += r->ubasestep;
@@ -1415,13 +1415,13 @@ Referenced by D_RasterizeAliasPolySmooth().
 				lzi += r_zistepx;
 				lpz++;
 				llight += r_lstepx;
-				lptex += a_ststepxwhole;
-				lsfrac += a_sstepxfrac;
+				lptex += r->a_ststepxwhole;
+				lsfrac += r->a_sstepxfrac;
 				lptex += lsfrac >> 16;
 				lsfrac &= 0xFFFF;
-				ltfrac += a_tstepxfrac;
+				ltfrac += r->a_tstepxfrac;
 				if (ltfrac & 0x10000) {
-					lptex += r_affinetridesc.skinwidth;
+					lptex += skinwidth;
 					ltfrac &= 0xFFFF;
 				}
 			} while (--lcount);
@@ -1463,7 +1463,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 		if (r->errorterm >= 0) {
 			d_pdest += d_pdestextrastep;
 			d_pz += d_pzextrastep;
-			r->d_aspancount += d_countextrastep;
+			r->d_aspancount += r->d_countextrastep;
 			d_ptex += d_ptexextrastep;
 			d_sfrac += d_sfracextrastep;
 			d_ptex += d_sfrac >> 16;
@@ -1600,7 +1600,7 @@ Referenced by D_DrawNonSubdiv().
 // set the s, t, and light gradients, which are consistent across the triangle
 // because being a triangle, things are affine
 //
-	D_PolysetCalcGradients(r_affinetridesc.skinwidth);
+	D_PolysetCalcGradients(r_affinetridesc.skinwidth, &r);
 
 #if 0
 	printf("%s:%d: plot left height = %d right height = %d\n", __func__, __LINE__, initialleftheight, initialrightheight);
@@ -1651,7 +1651,7 @@ Referenced by D_DrawNonSubdiv().
 	else
 		working_lstepx = r_lstepx;
 
-	d_countextrastep = r.ubasestep + 1;
+	r.d_countextrastep = r.ubasestep + 1;
 	d_ptexbasestep = ((r_sstepy + r_sstepx * r.ubasestep) >> 16) +
 	    ((r_tstepy + r_tstepx * r.ubasestep) >> 16) *
 	    r_affinetridesc.skinwidth;
@@ -1665,15 +1665,15 @@ Referenced by D_DrawNonSubdiv().
 	d_lightbasestep = r_lstepy + working_lstepx * r.ubasestep;
 	d_zibasestep = r_zistepy + r_zistepx * r.ubasestep;
 
-	d_ptexextrastep = ((r_sstepy + r_sstepx * d_countextrastep) >> 16) +
-	    ((r_tstepy + r_tstepx * d_countextrastep) >> 16) *
+	d_ptexextrastep = ((r_sstepy + r_sstepx * r.d_countextrastep) >> 16) +
+	    ((r_tstepy + r_tstepx * r.d_countextrastep) >> 16) *
 	    r_affinetridesc.skinwidth;
 #if id386
 	d_sfracextrastep = (r_sstepy + r_sstepx * d_countextrastep) << 16;
 	d_tfracextrastep = (r_tstepy + r_tstepx * d_countextrastep) << 16;
 #else
-	d_sfracextrastep = (r_sstepy + r_sstepx * d_countextrastep) & 0xFFFF;
-	d_tfracextrastep = (r_tstepy + r_tstepx * d_countextrastep) & 0xFFFF;
+	d_sfracextrastep = (r_sstepy + r_sstepx * r.d_countextrastep) & 0xFFFF;
+	d_tfracextrastep = (r_tstepy + r_tstepx * r.d_countextrastep) & 0xFFFF;
 #endif
 	d_lightextrastep = d_lightbasestep + working_lstepx;
 	d_ziextrastep = d_zibasestep + r_zistepx;
@@ -1723,7 +1723,7 @@ Referenced by D_DrawNonSubdiv().
 		else
 			working_lstepx = r_lstepx;
 
-		d_countextrastep = r.ubasestep + 1;
+		r.d_countextrastep = r.ubasestep + 1;
 		d_ptexbasestep = ((r_sstepy + r_sstepx * r.ubasestep) >> 16) +
 		    ((r_tstepy + r_tstepx * r.ubasestep) >> 16) *
 		    r_affinetridesc.skinwidth;
@@ -1738,20 +1738,20 @@ Referenced by D_DrawNonSubdiv().
 		d_zibasestep = r_zistepy + r_zistepx * r.ubasestep;
 
 		d_ptexextrastep =
-		    ((r_sstepy + r_sstepx * d_countextrastep) >> 16) +
+		    ((r_sstepy + r_sstepx * r.d_countextrastep) >> 16) +
 		    ((r_tstepy +
-		      r_tstepx * d_countextrastep) >> 16) *
+		      r_tstepx * r.d_countextrastep) >> 16) *
 		    r_affinetridesc.skinwidth;
 #if id386
 		d_sfracextrastep =
-		    ((r_sstepy + r_sstepx * d_countextrastep) & 0xFFFF) << 16;
+		    ((r_sstepy + r_sstepx * r.d_countextrastep) & 0xFFFF) << 16;
 		d_tfracextrastep =
-		    ((r_tstepy + r_tstepx * d_countextrastep) & 0xFFFF) << 16;
+		    ((r_tstepy + r_tstepx * r.d_countextrastep) & 0xFFFF) << 16;
 #else
 		d_sfracextrastep =
-		    (r_sstepy + r_sstepx * d_countextrastep) & 0xFFFF;
+		    (r_sstepy + r_sstepx * r.d_countextrastep) & 0xFFFF;
 		d_tfracextrastep =
-		    (r_tstepy + r_tstepx * d_countextrastep) & 0xFFFF;
+		    (r_tstepy + r_tstepx * r.d_countextrastep) & 0xFFFF;
 #endif
 		d_lightextrastep = d_lightbasestep + working_lstepx;
 		d_ziextrastep = d_zibasestep + r_zistepx;
@@ -1765,10 +1765,11 @@ Referenced by D_DrawNonSubdiv().
 	D_PolysetSetUpForLineScan(prighttop[0], prighttop[1],
 				  prightbottom[0], prightbottom[1], &r);
 	r.d_aspancount = 0;
-	d_countextrastep = r.ubasestep + 1;
+	r.d_countextrastep = r.ubasestep + 1;
 	originalcount = a_spans[initialrightheight].count;
 	a_spans[initialrightheight].count = -999999;	// mark end of the spanpackages
-	D_PolysetDrawSpans8(a_spans, d_viewbuffer, &r, acolormap);
+	D_PolysetDrawSpans8(a_spans, d_viewbuffer, &r, acolormap,
+		r_affinetridesc.skinwidth);
 
 #if 0
        	printf("%s:%d\n", __func__, __LINE__);
@@ -1791,13 +1792,14 @@ Referenced by D_DrawNonSubdiv().
 		D_PolysetSetUpForLineScan(prighttop[0], prighttop[1],
 					  prightbottom[0], prightbottom[1], &r);
 
-		d_countextrastep = r.ubasestep + 1;
+		r.d_countextrastep = r.ubasestep + 1;
 		a_spans[initialrightheight + height].count = -999999;
 		// mark end of the spanpackages
 #if 0
        		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_PolysetDrawSpans8(pstart, d_viewbuffer, &r, acolormap);
+		D_PolysetDrawSpans8(pstart, d_viewbuffer, &r, acolormap,
+			r_affinetridesc.skinwidth);
 	}
 }
 
@@ -3666,6 +3668,8 @@ Referenced by R_AliasDrawModel().
 	r_affinetridesc.skinwidth = a_skinwidth;
 	r_affinetridesc.seamfixupX16 = (a_skinwidth >> 1) << 16;
 	r_affinetridesc.skinheight = pmdl->skinheight;
+	write_png_file("skin.png", r_affinetridesc.skinwidth,
+		r_affinetridesc.skinheight, r_affinetridesc.pskin);
 
 /* Skin stuff not yet */
 
@@ -4097,7 +4101,7 @@ int main(int argc, char *argv[])
 	byte *pb;
 	entity_t ent;
 	struct control_data *cd;
-	int i, fd, opt, ret;
+	int i, j, fd, opt, ret;
 	model_t m;
 	char fname[PATH_MAX];
 	pixel_t *d_viewbuffer;
@@ -4121,8 +4125,9 @@ int main(int argc, char *argv[])
 	ent.angles[PITCH] = 0.0;
 	ent.skinnum = 0;
 	ent.colormap = malloc(sizeof(pixel_t) * 256 * 256);
-	for (i = 0; i < 65536; i++)
-		ent.colormap[i] = (i & 0xff);
+	for (i = 0; i < 256; i++)
+		for (j = 0; j < 256; j++)
+				ent.colormap[256 * i + j] = j;
 	d_zwidth = WIDTH;
 	d_pzbuffer = malloc(HEIGHT * WIDTH * 4);
 	d_viewbuffer = malloc(HEIGHT * WIDTH);
