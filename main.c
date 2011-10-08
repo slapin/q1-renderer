@@ -382,7 +382,9 @@ void write_png_file(char* file_name, int width,
 {
 	png_structp png_ptr;
 	png_infop info_ptr;
-	unsigned char **row_pointers = malloc(height * sizeof(unsigned char *));
+	PALETTE pal;
+	png_color palette[256];
+	const unsigned char ** row_pointers = malloc(height * sizeof(unsigned char *));
 	int i;
         /* create file */
         FILE *fp = fopen(file_name, "wb");
@@ -390,7 +392,12 @@ void write_png_file(char* file_name, int width,
 		return;
 	for (i = 0; i < height; i++)
 		row_pointers[i] = buffer + width * i;
-
+	get_palette(pal);
+	for(i = 0; i < 256; i++) {
+		palette[i].red = pal[i].r;
+		palette[i].green = pal[i].g;
+		palette[i].blue = pal[i].b;
+	}
 
         /* initialize stuff */
         png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -413,9 +420,10 @@ void write_png_file(char* file_name, int width,
 		return;
 
         png_set_IHDR(png_ptr, info_ptr, width, height,
-                     8, PNG_COLOR_TYPE_GRAY, PNG_INTERLACE_NONE,
+                     8, PNG_COLOR_TYPE_PALETTE, PNG_INTERLACE_NONE,
                      PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
 
+	png_set_PLTE(png_ptr, info_ptr, palette, 256);
         png_write_info(png_ptr, info_ptr);
 
 
