@@ -124,7 +124,6 @@ static int d_ziextrastep;
 
 static unsigned int d_zwidth;
 
-static edgetable *pedgetable;
 static short *zspantable[MAXHEIGHT];
 static int d_scantable[MAXHEIGHT];
 static byte *skintable[MAX_LBM_HEIGHT];
@@ -1226,7 +1225,22 @@ Referenced by D_PolysetDraw().
 		}
 }
 
-static void D_PolysetSetEdgeTable(void)
+struct r_state {
+	int ubasestep;
+	int d_aspancount;
+	int erroradjustup;
+	int erroradjustdown;
+	int errorterm;
+	int d_countextrastep;
+	int a_ststepxwhole;
+	int a_sstepxfrac;
+	int a_tstepxfrac;
+	spanpackage_t *d_pedgespanpackage;
+	spanpackage_t *a_spans;
+	edgetable *pedgetable;
+};
+
+static void D_PolysetSetEdgeTable(struct r_state *r)
 /*
 Definition at line 956 of file d_polyse.c.
 
@@ -1247,9 +1261,9 @@ Referenced by D_DrawNonSubdiv().
 	if (r_p0[1] >= r_p1[1]) {
 		if (r_p0[1] == r_p1[1]) {
 			if (r_p0[1] < r_p2[1])
-				pedgetable = &edgetables[2];
+				r->pedgetable = &edgetables[2];
 			else
-				pedgetable = &edgetables[5];
+				r->pedgetable = &edgetables[5];
 
 			return;
 		} else {
@@ -1259,16 +1273,16 @@ Referenced by D_DrawNonSubdiv().
 
 	if (r_p0[1] == r_p2[1]) {
 		if (edgetableindex)
-			pedgetable = &edgetables[8];
+			r->pedgetable = &edgetables[8];
 		else
-			pedgetable = &edgetables[9];
+			r->pedgetable = &edgetables[9];
 
 		return;
 	} else if (r_p1[1] == r_p2[1]) {
 		if (edgetableindex)
-			pedgetable = &edgetables[10];
+			r->pedgetable = &edgetables[10];
 		else
-			pedgetable = &edgetables[11];
+			r->pedgetable = &edgetables[11];
 
 		return;
 	}
@@ -1279,22 +1293,9 @@ Referenced by D_DrawNonSubdiv().
 	if (r_p1[1] > r_p2[1])
 		edgetableindex += 4;
 
-	pedgetable = &edgetables[edgetableindex];
+	r->pedgetable = &edgetables[edgetableindex];
 }
 
-struct r_state {
-	int ubasestep;
-	int d_aspancount;
-	int erroradjustup;
-	int erroradjustdown;
-	int errorterm;
-	int d_countextrastep;
-	int a_ststepxwhole;
-	int a_sstepxfrac;
-	int a_tstepxfrac;
-	spanpackage_t *d_pedgespanpackage;
-	spanpackage_t *a_spans;
-};
 static void D_PolysetCalcGradients(int skinwidth, struct r_state *r)
 /*
 Definition at line 553 of file d_polyse.c.
@@ -1586,11 +1587,11 @@ Referenced by D_DrawNonSubdiv().
 	int d_ptexbasestep;
 	int d_ptexextrastep;
 
-	plefttop = pedgetable->pleftedgevert0;
-	prighttop = pedgetable->prightedgevert0;
+	plefttop = r->pedgetable->pleftedgevert0;
+	prighttop = r->pedgetable->prightedgevert0;
 
-	pleftbottom = pedgetable->pleftedgevert1;
-	prightbottom = pedgetable->prightedgevert1;
+	pleftbottom = r->pedgetable->pleftedgevert1;
+	prightbottom = r->pedgetable->prightedgevert1;
 
 	initialleftheight = pleftbottom[1] - plefttop[1];
 	initialrightheight = prightbottom[1] - prighttop[1];
@@ -1668,8 +1669,8 @@ Referenced by D_DrawNonSubdiv().
 	    ((r_tstepy + r_tstepx * r->d_countextrastep) >> 16) *
 	    r_affinetridesc.skinwidth;
 #if id386
-	d_sfracextrastep = (r_sstepy + r_sstepx * d_countextrastep) << 16;
-	d_tfracextrastep = (r_tstepy + r_tstepx * d_countextrastep) << 16;
+	d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) << 16;
+	d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) << 16;
 #else
 	d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF;
 	d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF;
@@ -1682,11 +1683,11 @@ Referenced by D_DrawNonSubdiv().
 //
 // scan out the bottom part of the left edge, if it exists
 //
-	if (pedgetable->numleftedges == 2) {
+	if (r->pedgetable->numleftedges == 2) {
 		int height;
 
 		plefttop = pleftbottom;
-		pleftbottom = pedgetable->pleftedgevert2;
+		pleftbottom = r->pedgetable->pleftedgevert2;
 
 		D_PolysetSetUpForLineScan(plefttop[0], plefttop[1],
 					  pleftbottom[0], pleftbottom[1], r);
@@ -1774,7 +1775,7 @@ Referenced by D_DrawNonSubdiv().
        	printf("%s:%d\n", __func__, __LINE__);
 #endif
 // scan out the bottom part of the right edge, if it exists
-	if (pedgetable->numrightedges == 2) {
+	if (r->pedgetable->numrightedges == 2) {
 		int height;
 		spanpackage_t *pstart;
 
@@ -1784,7 +1785,7 @@ Referenced by D_DrawNonSubdiv().
 		r->d_aspancount = prightbottom[0] - prighttop[0];
 
 		prighttop = prightbottom;
-		prightbottom = pedgetable->prightedgevert2;
+		prightbottom = r->pedgetable->prightedgevert2;
 
 		height = prightbottom[1] - prighttop[1];
 
@@ -1868,7 +1869,7 @@ Referenced by D_PolysetDraw().
 				r_p2[2] += r_affinetridesc.seamfixupX16;
 		}
 
-		D_PolysetSetEdgeTable();
+		D_PolysetSetEdgeTable(r);
 #if 0
        		printf("%s:%d running D_RasterizeAliasPolySmooth()\n", __func__, __LINE__);
 #endif
