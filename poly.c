@@ -93,7 +93,6 @@ static affinetridesc_t r_affinetridesc;
 /* End of input params */
 
 
-static int d_xdenom;
 static int r_p0[6], r_p1[6], r_p2[6];
 
 static short *zspantable[MAXHEIGHT];
@@ -114,7 +113,7 @@ static edgetable edgetables[12] = {
 	{0, 1, r_p0, r_p2, NULL, 1, r_p0, r_p1, NULL},
 };
 
-static adivtab_t adivtab[32 * 32] = {
+static const adivtab_t adivtab[32 * 32] = {
 	{1, 0}, {1, -1}, {1, -2}, {1, -3}, {1, -4}, {1, -5},
 	{1, -6}, {1, -7}, {2, -1}, {2, -3}, {3, 0}, {3, -3},
 	{5, 0}, {7, -1}, {15, 0}, {0, 0}, {-15, 0}, {-8, 1},
@@ -1290,7 +1289,7 @@ Referenced by D_DrawNonSubdiv().
 	r->pedgetable = &edgetables[edgetableindex];
 }
 
-static void D_PolysetCalcGradients(int skinwidth, struct r_state *r)
+static void D_PolysetCalcGradients(int skinwidth, struct r_state *r, int d_xdenom)
 /*
 Definition at line 553 of file d_polyse.c.
 
@@ -1564,7 +1563,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	}
 }
 
-static void D_RasterizeAliasPolySmooth(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, unsigned int d_zwidth, int screenwidth)
+static void D_RasterizeAliasPolySmooth(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, unsigned int d_zwidth, int screenwidth, int d_xdenom)
 /*
 Definition at line 742 of file d_polyse.c.
 
@@ -1595,7 +1594,7 @@ Referenced by D_DrawNonSubdiv().
 // set the s, t, and light gradients, which are consistent across the triangle
 // because being a triangle, things are affine
 //
-	D_PolysetCalcGradients(r_affinetridesc.skinwidth, r);
+	D_PolysetCalcGradients(r_affinetridesc.skinwidth, r, d_xdenom);
 
 #if 0
 	printf("%s:%d: plot left height = %d right height = %d\n", __func__, __LINE__, initialleftheight, initialrightheight);
@@ -1798,7 +1797,7 @@ Referenced by D_DrawNonSubdiv().
 	}
 }
 
-static void D_DrawNonSubdiv(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth)
+static void D_DrawNonSubdiv(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth, int *d_xdenom)
 /*
 Definition at line 266 of file d_polyse.c.
 
@@ -1821,7 +1820,7 @@ Referenced by D_PolysetDraw().
 		index1 = pfv + ptri->vertindex[1];
 		index2 = pfv + ptri->vertindex[2];
 
-		d_xdenom = (index0->v[1] - index1->v[1]) *
+		*d_xdenom = (index0->v[1] - index1->v[1]) *
 		    (index0->v[0] - index2->v[0]) -
 		    (index0->v[0] - index1->v[0]) * (index0->v[1] -
 						     index2->v[1]);
@@ -1830,7 +1829,7 @@ Referenced by D_PolysetDraw().
        		printf("%s:%d d_xdenom = %d, %d, %d, %d, %d, %d, %d\n", __func__, __LINE__, d_xdenom, index0->v[0],
 				index0->v[1], index1->v[0], index1->v[1], index2->v[0], index2->v[1]);
 #endif
-		if (d_xdenom >= 0) {
+		if (*d_xdenom >= 0) {
 			continue;
 		}
 
@@ -1868,7 +1867,7 @@ Referenced by D_PolysetDraw().
 #if 0
        		printf("%s:%d running D_RasterizeAliasPolySmooth()\n", __func__, __LINE__);
 #endif
-		D_RasterizeAliasPolySmooth(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
+		D_RasterizeAliasPolySmooth(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, *d_xdenom);
 	}
 }
 
@@ -1883,6 +1882,7 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 {
 	spanpackage_t spans[DPS_MAXSPANS + 1 +
 			    ((CACHE_SIZE - 1) / sizeof(spanpackage_t)) + 1];
+	int d_xdenom;
 	// one extra because of cache line pretouching
 
 	r->a_spans = (spanpackage_t *)
@@ -1897,7 +1897,7 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 #if 0
        		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_DrawNonSubdiv(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
+		D_DrawNonSubdiv(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, &d_xdenom);
 	}
 }
 
