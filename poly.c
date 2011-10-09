@@ -95,25 +95,17 @@ static affinetridesc_t r_affinetridesc;
 
 static int d_xdenom;
 static int r_p0[6], r_p1[6], r_p2[6];
-static int d_sfrac, d_tfrac;
-static int d_pzbasestep;
-static int d_pzextrastep;
 static int d_zi;
 static int screenwidth;
-static short *d_pz;
 static int r_lstepx;
 static int r_sstepy;
 static int r_sstepx;
 static int r_tstepy;
 static int r_tstepx;
-static int d_sfracbasestep;
-static int d_tfracbasestep;
 static int r_lstepy;
 static int d_zibasestep;
 static int r_zistepy;
 static int r_zistepx;
-static int d_sfracextrastep;
-static int d_tfracextrastep;
 static int d_ziextrastep;
 
 static unsigned int d_zwidth;
@@ -1234,6 +1226,15 @@ struct r_state {
 	int d_lightextrastep;
 	int d_pdestbasestep;
 	int d_pdestextrastep;
+	short *d_pz;
+	int d_pzbasestep;
+	int d_pzextrastep;
+	int d_sfrac;
+	int d_sfracbasestep;
+	int d_sfracextrastep;
+	int d_tfrac;
+	int d_tfracbasestep;
+	int d_tfracextrastep;
 	spanpackage_t *d_pedgespanpackage;
 	spanpackage_t *a_spans;
 	edgetable *pedgetable;
@@ -1446,12 +1447,12 @@ Referenced by D_RasterizeAliasPolySmooth().
 
 	do {
 		r->d_pedgespanpackage->pdest = d_pdest;
-		r->d_pedgespanpackage->pz = d_pz;
+		r->d_pedgespanpackage->pz = r->d_pz;
 		r->d_pedgespanpackage->count = r->d_aspancount;
 		r->d_pedgespanpackage->ptex = d_ptex;
 
-		r->d_pedgespanpackage->sfrac = d_sfrac;
-		r->d_pedgespanpackage->tfrac = d_tfrac;
+		r->d_pedgespanpackage->sfrac = r->d_sfrac;
+		r->d_pedgespanpackage->tfrac = r->d_tfrac;
 
 		// FIXME: need to clamp l, s, t, at both ends?
 		r->d_pedgespanpackage->light = r->d_light;
@@ -1462,33 +1463,33 @@ Referenced by D_RasterizeAliasPolySmooth().
 		r->errorterm += r->erroradjustup;
 		if (r->errorterm >= 0) {
 			d_pdest += r->d_pdestextrastep;
-			d_pz += d_pzextrastep;
+			r->d_pz += r->d_pzextrastep;
 			r->d_aspancount += r->d_countextrastep;
 			d_ptex += d_ptexextrastep;
-			d_sfrac += d_sfracextrastep;
-			d_ptex += d_sfrac >> 16;
+			r->d_sfrac += r->d_sfracextrastep;
+			d_ptex += r->d_sfrac >> 16;
 
-			d_sfrac &= 0xFFFF;
-			d_tfrac += d_tfracextrastep;
-			if (d_tfrac & 0x10000) {
+			r->d_sfrac &= 0xFFFF;
+			r->d_tfrac += r->d_tfracextrastep;
+			if (r->d_tfrac & 0x10000) {
 				d_ptex += r_affinetridesc.skinwidth;
-				d_tfrac &= 0xFFFF;
+				r->d_tfrac &= 0xFFFF;
 			}
 			r->d_light += r->d_lightextrastep;
 			d_zi += d_ziextrastep;
 			r->errorterm -= r->erroradjustdown;
 		} else {
 			d_pdest += r->d_pdestbasestep;
-			d_pz += d_pzbasestep;
+			r->d_pz += r->d_pzbasestep;
 			r->d_aspancount += r->ubasestep;
 			d_ptex += d_ptexbasestep;
-			d_sfrac += d_sfracbasestep;
-			d_ptex += d_sfrac >> 16;
-			d_sfrac &= 0xFFFF;
-			d_tfrac += d_tfracbasestep;
-			if (d_tfrac & 0x10000) {
+			r->d_sfrac += r->d_sfracbasestep;
+			d_ptex += r->d_sfrac >> 16;
+			r->d_sfrac &= 0xFFFF;
+			r->d_tfrac += r->d_tfracbasestep;
+			if (r->d_tfrac & 0x10000) {
 				d_ptex += r_affinetridesc.skinwidth;
-				d_tfrac &= 0xFFFF;
+				r->d_tfrac &= 0xFFFF;
 			}
 			r->d_light += r->d_lightbasestep;
 			d_zi += d_zibasestep;
@@ -1623,15 +1624,15 @@ Referenced by D_DrawNonSubdiv().
 	d_ptex = (byte *) r_affinetridesc.pskin + (plefttop[2] >> 16) +
 	    (plefttop[3] >> 16) * r_affinetridesc.skinwidth;
 #if id386
-	d_sfrac = (plefttop[2] & 0xFFFF) << 16;
-	d_tfrac = (plefttop[3] & 0xFFFF) << 16;
-	d_pzbasestep = (d_zwidth + r->ubasestep) << 1;
-	d_pzextrastep = d_pzbasestep + 2;
+	r->d_sfrac = (plefttop[2] & 0xFFFF) << 16;
+	r->d_tfrac = (plefttop[3] & 0xFFFF) << 16;
+	r->d_pzbasestep = (d_zwidth + r->ubasestep) << 1;
+	r->d_pzextrastep = r->d_pzbasestep + 2;
 #else
-	d_sfrac = plefttop[2] & 0xFFFF;
-	d_tfrac = plefttop[3] & 0xFFFF;
-	d_pzbasestep = d_zwidth + r->ubasestep;
-	d_pzextrastep = d_pzbasestep + 1;
+	r->d_sfrac = plefttop[2] & 0xFFFF;
+	r->d_tfrac = plefttop[3] & 0xFFFF;
+	r->d_pzbasestep = d_zwidth + r->ubasestep;
+	r->d_pzextrastep = r->d_pzbasestep + 1;
 #endif
 	r->d_light = plefttop[4];
 	d_zi = plefttop[5];
@@ -1639,7 +1640,7 @@ Referenced by D_DrawNonSubdiv().
 	r->d_pdestbasestep = screenwidth + r->ubasestep;
 	r->d_pdestextrastep = r->d_pdestbasestep + 1;
 	d_pdest = (byte *) d_viewbuffer + ystart * screenwidth + plefttop[0];
-	d_pz = d_pzbuffer + ystart * d_zwidth + plefttop[0];
+	r->d_pz = d_pzbuffer + ystart * d_zwidth + plefttop[0];
 
 // TODO: can reuse partial expressions here
 
@@ -1656,11 +1657,11 @@ Referenced by D_DrawNonSubdiv().
 	    ((r_tstepy + r_tstepx * r->ubasestep) >> 16) *
 	    r_affinetridesc.skinwidth;
 #if id386
-	d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) << 16;
-	d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) << 16;
+	r->d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) << 16;
+	r->d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) << 16;
 #else
-	d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) & 0xFFFF;
-	d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) & 0xFFFF;
+	r->d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) & 0xFFFF;
+	r->d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) & 0xFFFF;
 #endif
 	r->d_lightbasestep = r_lstepy + working_lstepx * r->ubasestep;
 	d_zibasestep = r_zistepy + r_zistepx * r->ubasestep;
@@ -1669,11 +1670,11 @@ Referenced by D_DrawNonSubdiv().
 	    ((r_tstepy + r_tstepx * r->d_countextrastep) >> 16) *
 	    r_affinetridesc.skinwidth;
 #if id386
-	d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) << 16;
-	d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) << 16;
+	r->d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) << 16;
+	r->d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) << 16;
 #else
-	d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF;
-	d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF;
+	r->d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF;
+	r->d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF;
 #endif
 	r->d_lightextrastep = r->d_lightbasestep + working_lstepx;
 	d_ziextrastep = d_zibasestep + r_zistepx;
@@ -1700,8 +1701,8 @@ Referenced by D_DrawNonSubdiv().
 		r->d_aspancount = plefttop[0] - prighttop[0];
 		d_ptex = (byte *) r_affinetridesc.pskin + (plefttop[2] >> 16) +
 		    (plefttop[3] >> 16) * r_affinetridesc.skinwidth;
-		d_sfrac = 0;
-		d_tfrac = 0;
+		r->d_sfrac = 0;
+		r->d_tfrac = 0;
 		r->d_light = plefttop[4];
 		d_zi = plefttop[5];
 
@@ -1710,13 +1711,13 @@ Referenced by D_DrawNonSubdiv().
 		d_pdest =
 		    (byte *) d_viewbuffer + ystart * screenwidth + plefttop[0];
 #if id386
-		d_pzbasestep = (d_zwidth + r->ubasestep) << 1;
-		d_pzextrastep = d_pzbasestep + 2;
+		r->d_pzbasestep = (d_zwidth + r->ubasestep) << 1;
+		r->d_pzextrastep = r->d_pzbasestep + 2;
 #else
-		d_pzbasestep = d_zwidth + r->ubasestep;
-		d_pzextrastep = d_pzbasestep + 1;
+		r->d_pzbasestep = d_zwidth + r->ubasestep;
+		r->d_pzextrastep = r->d_pzbasestep + 1;
 #endif
-		d_pz = d_pzbuffer + ystart * d_zwidth + plefttop[0];
+		r->d_pz = d_pzbuffer + ystart * d_zwidth + plefttop[0];
 
 		if (r->ubasestep < 0)
 			working_lstepx = r_lstepx - 1;
@@ -1728,11 +1729,11 @@ Referenced by D_DrawNonSubdiv().
 		    ((r_tstepy + r_tstepx * r->ubasestep) >> 16) *
 		    r_affinetridesc.skinwidth;
 #if id386
-		d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) << 16;
-		d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) << 16;
+		r->d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) << 16;
+		r->d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) << 16;
 #else
-		d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) & 0xFFFF;
-		d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) & 0xFFFF;
+		r->d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) & 0xFFFF;
+		r->d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) & 0xFFFF;
 #endif
 		r->d_lightbasestep = r_lstepy + working_lstepx * r->ubasestep;
 		d_zibasestep = r_zistepy + r_zistepx * r->ubasestep;
@@ -1743,14 +1744,14 @@ Referenced by D_DrawNonSubdiv().
 		      r_tstepx * r->d_countextrastep) >> 16) *
 		    r_affinetridesc.skinwidth;
 #if id386
-		d_sfracextrastep =
+		r->d_sfracextrastep =
 		    ((r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF) << 16;
-		d_tfracextrastep =
+		r->d_tfracextrastep =
 		    ((r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF) << 16;
 #else
-		d_sfracextrastep =
+		r->d_sfracextrastep =
 		    (r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF;
-		d_tfracextrastep =
+		r->d_tfracextrastep =
 		    (r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF;
 #endif
 		r->d_lightextrastep = r->d_lightbasestep + working_lstepx;
