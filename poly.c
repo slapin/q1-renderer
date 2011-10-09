@@ -95,20 +95,6 @@ static affinetridesc_t r_affinetridesc;
 
 static int d_xdenom;
 static int r_p0[6], r_p1[6], r_p2[6];
-static int d_zi;
-static int screenwidth;
-static int r_lstepx;
-static int r_sstepy;
-static int r_sstepx;
-static int r_tstepy;
-static int r_tstepx;
-static int r_lstepy;
-static int d_zibasestep;
-static int r_zistepy;
-static int r_zistepx;
-static int d_ziextrastep;
-
-static unsigned int d_zwidth;
 
 static short *zspantable[MAXHEIGHT];
 static int d_scantable[MAXHEIGHT];
@@ -1235,6 +1221,14 @@ struct r_state {
 	int d_tfrac;
 	int d_tfracbasestep;
 	int d_tfracextrastep;
+	int d_zi;
+	int d_zibasestep;
+	int d_ziextrastep;
+	int r_lstepx;
+	int r_lstepy;
+	int r_sstepx, r_sstepy;
+	int r_tstepx, r_tstepy;
+	int r_zistepx, r_zistepy;
 	spanpackage_t *d_pedgespanpackage;
 	spanpackage_t *a_spans;
 	edgetable *pedgetable;
@@ -1323,41 +1317,41 @@ Referenced by D_RasterizeAliasPolySmooth().
 // very visible, overflow is very unlikely, because of ambient lighting
 	t0 = r_p0[4] - r_p2[4];
 	t1 = r_p1[4] - r_p2[4];
-	r_lstepx = (int)
+	r->r_lstepx = (int)
 	    ceil((t1 * p01_minus_p21 - t0 * p11_minus_p21) * xstepdenominv);
-	r_lstepy = (int)
+	r->r_lstepy = (int)
 	    ceil((t1 * p00_minus_p20 - t0 * p10_minus_p20) * ystepdenominv);
 
 	t0 = r_p0[2] - r_p2[2];
 	t1 = r_p1[2] - r_p2[2];
-	r_sstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
+	r->r_sstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			 xstepdenominv);
-	r_sstepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
+	r->r_sstepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
 			 ystepdenominv);
 
 	t0 = r_p0[3] - r_p2[3];
 	t1 = r_p1[3] - r_p2[3];
-	r_tstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
+	r->r_tstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			 xstepdenominv);
-	r_tstepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
+	r->r_tstepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
 			 ystepdenominv);
 
 	t0 = r_p0[5] - r_p2[5];
 	t1 = r_p1[5] - r_p2[5];
-	r_zistepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
+	r->r_zistepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			  xstepdenominv);
-	r_zistepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
+	r->r_zistepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
 			  ystepdenominv);
 
 #if id386
-	r->a_sstepxfrac = r_sstepx << 16;
-	r->a_tstepxfrac = r_tstepx << 16;
+	r->a_sstepxfrac = r->r_sstepx << 16;
+	r->a_tstepxfrac = r->r_tstepx << 16;
 #else
-	r->a_sstepxfrac = r_sstepx & 0xFFFF;
-	r->a_tstepxfrac = r_tstepx & 0xFFFF;
+	r->a_sstepxfrac = r->r_sstepx & 0xFFFF;
+	r->a_tstepxfrac = r->r_tstepx & 0xFFFF;
 #endif
 
-	r->a_ststepxwhole = skinwidth * (r_tstepx >> 16) + (r_sstepx >> 16);
+	r->a_ststepxwhole = skinwidth * (r->r_tstepx >> 16) + (r->r_sstepx >> 16);
 }
 
 
@@ -1413,9 +1407,9 @@ Referenced by D_RasterizeAliasPolySmooth().
 #endif
 				}
 				lpdest++;
-				lzi += r_zistepx;
+				lzi += r->r_zistepx;
 				lpz++;
-				llight += r_lstepx;
+				llight += r->r_lstepx;
 				lptex += r->a_ststepxwhole;
 				lsfrac += r->a_sstepxfrac;
 				lptex += lsfrac >> 16;
@@ -1456,7 +1450,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 
 		// FIXME: need to clamp l, s, t, at both ends?
 		r->d_pedgespanpackage->light = r->d_light;
-		r->d_pedgespanpackage->zi = d_zi;
+		r->d_pedgespanpackage->zi = r->d_zi;
 
 		r->d_pedgespanpackage++;
 
@@ -1476,7 +1470,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 				r->d_tfrac &= 0xFFFF;
 			}
 			r->d_light += r->d_lightextrastep;
-			d_zi += d_ziextrastep;
+			r->d_zi += r->d_ziextrastep;
 			r->errorterm -= r->erroradjustdown;
 		} else {
 			d_pdest += r->d_pdestbasestep;
@@ -1492,7 +1486,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 				r->d_tfrac &= 0xFFFF;
 			}
 			r->d_light += r->d_lightbasestep;
-			d_zi += d_zibasestep;
+			r->d_zi += r->d_zibasestep;
 		}
 	} while (--height);
 }
@@ -1570,7 +1564,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	}
 }
 
-static void D_RasterizeAliasPolySmooth(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r)
+static void D_RasterizeAliasPolySmooth(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, unsigned int d_zwidth, int screenwidth)
 /*
 Definition at line 742 of file d_polyse.c.
 
@@ -1635,7 +1629,7 @@ Referenced by D_DrawNonSubdiv().
 	r->d_pzextrastep = r->d_pzbasestep + 1;
 #endif
 	r->d_light = plefttop[4];
-	d_zi = plefttop[5];
+	r->d_zi = plefttop[5];
 
 	r->d_pdestbasestep = screenwidth + r->ubasestep;
 	r->d_pdestextrastep = r->d_pdestbasestep + 1;
@@ -1648,36 +1642,36 @@ Referenced by D_DrawNonSubdiv().
 // underflow (sort of turning the floor () we did in the gradient calcs into
 // ceil (), but plus a little bit)
 	if (r->ubasestep < 0)
-		working_lstepx = r_lstepx - 1;
+		working_lstepx = r->r_lstepx - 1;
 	else
-		working_lstepx = r_lstepx;
+		working_lstepx = r->r_lstepx;
 
 	r->d_countextrastep = r->ubasestep + 1;
-	d_ptexbasestep = ((r_sstepy + r_sstepx * r->ubasestep) >> 16) +
-	    ((r_tstepy + r_tstepx * r->ubasestep) >> 16) *
+	d_ptexbasestep = ((r->r_sstepy + r->r_sstepx * r->ubasestep) >> 16) +
+	    ((r->r_tstepy + r->r_tstepx * r->ubasestep) >> 16) *
 	    r_affinetridesc.skinwidth;
 #if id386
-	r->d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) << 16;
-	r->d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) << 16;
+	r->d_sfracbasestep = (r->r_sstepy + r->r_sstepx * r->ubasestep) << 16;
+	r->d_tfracbasestep = (r->r_tstepy + r->r_tstepx * r->ubasestep) << 16;
 #else
-	r->d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) & 0xFFFF;
-	r->d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) & 0xFFFF;
+	r->d_sfracbasestep = (r->r_sstepy + r->r_sstepx * r->ubasestep) & 0xFFFF;
+	r->d_tfracbasestep = (r->r_tstepy + r->r_tstepx * r->ubasestep) & 0xFFFF;
 #endif
-	r->d_lightbasestep = r_lstepy + working_lstepx * r->ubasestep;
-	d_zibasestep = r_zistepy + r_zistepx * r->ubasestep;
+	r->d_lightbasestep = r->r_lstepy + working_lstepx * r->ubasestep;
+	r->d_zibasestep = r->r_zistepy + r->r_zistepx * r->ubasestep;
 
-	d_ptexextrastep = ((r_sstepy + r_sstepx * r->d_countextrastep) >> 16) +
-	    ((r_tstepy + r_tstepx * r->d_countextrastep) >> 16) *
+	d_ptexextrastep = ((r->r_sstepy + r->r_sstepx * r->d_countextrastep) >> 16) +
+	    ((r->r_tstepy + r->r_tstepx * r->d_countextrastep) >> 16) *
 	    r_affinetridesc.skinwidth;
 #if id386
-	r->d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) << 16;
-	r->d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) << 16;
+	r->d_sfracextrastep = (r->r_sstepy + r->r_sstepx * r->d_countextrastep) << 16;
+	r->d_tfracextrastep = (r->r_tstepy + r->r_tstepx * r->d_countextrastep) << 16;
 #else
-	r->d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF;
-	r->d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF;
+	r->d_sfracextrastep = (r->r_sstepy + r->r_sstepx * r->d_countextrastep) & 0xFFFF;
+	r->d_tfracextrastep = (r->r_tstepy + r->r_tstepx * r->d_countextrastep) & 0xFFFF;
 #endif
 	r->d_lightextrastep = r->d_lightbasestep + working_lstepx;
-	d_ziextrastep = d_zibasestep + r_zistepx;
+	r->d_ziextrastep = r->d_zibasestep + r->r_zistepx;
 
 	D_PolysetScanLeftEdge(initialleftheight, d_pdest, d_ptex, d_ptexbasestep, d_ptexextrastep, r);
 
@@ -1704,7 +1698,7 @@ Referenced by D_DrawNonSubdiv().
 		r->d_sfrac = 0;
 		r->d_tfrac = 0;
 		r->d_light = plefttop[4];
-		d_zi = plefttop[5];
+		r->d_zi = plefttop[5];
 
 		r->d_pdestbasestep = screenwidth + r->ubasestep;
 		r->d_pdestextrastep = r->d_pdestbasestep + 1;
@@ -1720,42 +1714,42 @@ Referenced by D_DrawNonSubdiv().
 		r->d_pz = d_pzbuffer + ystart * d_zwidth + plefttop[0];
 
 		if (r->ubasestep < 0)
-			working_lstepx = r_lstepx - 1;
+			working_lstepx = r->r_lstepx - 1;
 		else
-			working_lstepx = r_lstepx;
+			working_lstepx = r->r_lstepx;
 
 		r->d_countextrastep = r->ubasestep + 1;
-		d_ptexbasestep = ((r_sstepy + r_sstepx * r->ubasestep) >> 16) +
-		    ((r_tstepy + r_tstepx * r->ubasestep) >> 16) *
+		d_ptexbasestep = ((r->r_sstepy + r->r_sstepx * r->ubasestep) >> 16) +
+		    ((r->r_tstepy + r->r_tstepx * r->ubasestep) >> 16) *
 		    r_affinetridesc.skinwidth;
 #if id386
-		r->d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) << 16;
-		r->d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) << 16;
+		r->d_sfracbasestep = (r->r_sstepy + r->r_sstepx * r->ubasestep) << 16;
+		r->d_tfracbasestep = (r->r_tstepy + r->r_tstepx * r->ubasestep) << 16;
 #else
-		r->d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) & 0xFFFF;
-		r->d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) & 0xFFFF;
+		r->d_sfracbasestep = (r->r_sstepy + r->r_sstepx * r->ubasestep) & 0xFFFF;
+		r->d_tfracbasestep = (r->r_tstepy + r->r_tstepx * r->ubasestep) & 0xFFFF;
 #endif
-		r->d_lightbasestep = r_lstepy + working_lstepx * r->ubasestep;
-		d_zibasestep = r_zistepy + r_zistepx * r->ubasestep;
+		r->d_lightbasestep = r->r_lstepy + working_lstepx * r->ubasestep;
+		r->d_zibasestep = r->r_zistepy + r->r_zistepx * r->ubasestep;
 
 		d_ptexextrastep =
-		    ((r_sstepy + r_sstepx * r->d_countextrastep) >> 16) +
-		    ((r_tstepy +
-		      r_tstepx * r->d_countextrastep) >> 16) *
+		    ((r->r_sstepy + r->r_sstepx * r->d_countextrastep) >> 16) +
+		    ((r->r_tstepy +
+		      r->r_tstepx * r->d_countextrastep) >> 16) *
 		    r_affinetridesc.skinwidth;
 #if id386
 		r->d_sfracextrastep =
-		    ((r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF) << 16;
+		    ((r->r_sstepy + r->r_sstepx * r->d_countextrastep) & 0xFFFF) << 16;
 		r->d_tfracextrastep =
-		    ((r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF) << 16;
+		    ((r->r_tstepy + r->r_tstepx * r->d_countextrastep) & 0xFFFF) << 16;
 #else
 		r->d_sfracextrastep =
-		    (r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF;
+		    (r->r_sstepy + r->r_sstepx * r->d_countextrastep) & 0xFFFF;
 		r->d_tfracextrastep =
-		    (r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF;
+		    (r->r_tstepy + r->r_tstepx * r->d_countextrastep) & 0xFFFF;
 #endif
 		r->d_lightextrastep = r->d_lightbasestep + working_lstepx;
-		d_ziextrastep = d_zibasestep + r_zistepx;
+		r->d_ziextrastep = r->d_zibasestep + r->r_zistepx;
 
 		D_PolysetScanLeftEdge(height, d_pdest, d_ptex, d_ptexbasestep, d_ptexextrastep, r);
 	}
@@ -1804,7 +1798,7 @@ Referenced by D_DrawNonSubdiv().
 	}
 }
 
-static void D_DrawNonSubdiv(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r)
+static void D_DrawNonSubdiv(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth)
 /*
 Definition at line 266 of file d_polyse.c.
 
@@ -1874,11 +1868,11 @@ Referenced by D_PolysetDraw().
 #if 0
        		printf("%s:%d running D_RasterizeAliasPolySmooth()\n", __func__, __LINE__);
 #endif
-		D_RasterizeAliasPolySmooth(d_viewbuffer, d_pzbuffer, acolormap, r);
+		D_RasterizeAliasPolySmooth(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
 	}
 }
 
-static void D_PolysetDraw(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r)
+static void D_PolysetDraw(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth)
 /*
 Definition at line 132 of file d_polyse.c.
 
@@ -1903,7 +1897,7 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 #if 0
        		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_DrawNonSubdiv(d_viewbuffer, d_pzbuffer, acolormap, r);
+		D_DrawNonSubdiv(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
 	}
 }
 
@@ -2225,7 +2219,7 @@ Referenced by R_AliasClipTriangle().
 	}
 }
 
-static void R_AliasClipTriangle(mtriangle_t * ptri, pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r)
+static void R_AliasClipTriangle(mtriangle_t * ptri, pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth)
 /*
 Definition at line 245 of file r_aclip.c.
 
@@ -2393,11 +2387,11 @@ Referenced by R_AliasPreparePoints().
 	for (i = 1; i < k - 1; i++) {
 		mtri.vertindex[1] = i;
 		mtri.vertindex[2] = i + 1;
-		D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r);
+		D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
 	}
 }
 
-static void R_AliasPreparePoints(entity_t *ent, pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r)
+static void R_AliasPreparePoints(entity_t *ent, pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, unsigned int d_zwidth, int screenwidth)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2456,10 +2450,10 @@ Referenced by R_AliasDrawModel().
 			// totally unclipped
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
-			D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r);
+			D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
 		} else {
 			// partially clipped
-			R_AliasClipTriangle(ptri, d_viewbuffer, d_pzbuffer, acolormap, r);
+			R_AliasClipTriangle(ptri, d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
 		}
 	}
 }
@@ -2567,7 +2561,7 @@ Referenced by R_AliasPrepareUnclippedPoints().
 	}
 }
 
-static void R_AliasPrepareUnclippedPoints(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r)
+static void R_AliasPrepareUnclippedPoints(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth)
 /*
 Definition at line 466 of file r_alias.c.
 
@@ -2591,7 +2585,7 @@ Referenced by R_AliasDrawModel().
 	    (mtriangle_t *) ((byte *) paliashdr + paliashdr->triangles);
 	r_affinetridesc.numtriangles = pmdl->numtris;
 
-	D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r);
+	D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
 }
 
 #if 0
@@ -3970,7 +3964,7 @@ static void D_PolysetUpdateTables(void)
 	}
 }
 
-static void R_AliasDrawModel(entity_t * ent, pixel_t *d_viewbuffer, short *d_pzbuffer)
+static void R_AliasDrawModel(entity_t * ent, pixel_t *d_viewbuffer, short *d_pzbuffer, unsigned int d_zwidth, int screenwidth)
 /*
 Definition at line 629 of file r_alias.c.
 
@@ -4043,9 +4037,9 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	ziscale = (float)0x8000 *(float)0x10000 *3.0;
 
 	if (ent->trivial_accept)
-		R_AliasPrepareUnclippedPoints(d_viewbuffer, d_pzbuffer, ent->colormap, &r);
+		R_AliasPrepareUnclippedPoints(d_viewbuffer, d_pzbuffer, ent->colormap, &r, d_zwidth, screenwidth);
 	else
-		R_AliasPreparePoints(ent, d_viewbuffer, d_pzbuffer, ent->colormap, &r);
+		R_AliasPreparePoints(ent, d_viewbuffer, d_pzbuffer, ent->colormap, &r, d_zwidth, screenwidth);
 }
 
 static void write_xbm(char *name, int width,
@@ -4092,7 +4086,7 @@ static void loopfunc(void *data)
 	memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
 	memset(d_viewbuffer, 0, HEIGHT * WIDTH);
 	AngleVectors(r_refdef.viewangles, vpn, vright, vup);
-	R_AliasDrawModel(ent, d_viewbuffer, d_pzbuffer);
+	R_AliasDrawModel(ent, d_viewbuffer, d_pzbuffer, ZWIDTH /* Z-Buffer width in pixels??? */, WIDTH /* Screen width */);
 	updatescr(d_viewbuffer);
 //	ent->frame = ent->frame ^ 1;
 //	ent->oldframe = ent->frame;
@@ -4130,15 +4124,13 @@ int main(int argc, char *argv[])
 	for (i = 0; i < 256; i++)
 		for (j = 0; j < 256; j++)
 				ent.colormap[256 * i + j] = j;
-	d_zwidth = WIDTH;
 	d_pzbuffer = malloc(HEIGHT * WIDTH * 4);
 	d_viewbuffer = malloc(HEIGHT * WIDTH);
-	screenwidth = WIDTH;
 	for (i=0 ; i < HEIGHT; i++)
 	{
 		d_scantable[i] = i * WIDTH;
-		zspantable[i] = d_pzbuffer + i*d_zwidth;
-		printf("zspantable[%d] = %p\n", i, d_pzbuffer + i*d_zwidth);
+		zspantable[i] = d_pzbuffer + i*ZWIDTH;
+		printf("zspantable[%d] = %p\n", i, d_pzbuffer + i*ZWIDTH);
 	}
 	r_refdef.aliasvrect.x = 0;
 	r_refdef.aliasvrect.y = 0;

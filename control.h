@@ -22,3 +22,4 @@ struct control_data {
 };
 #define WIDTH	640
 #define HEIGHT	480
+#define ZWIDTH WIDTH
