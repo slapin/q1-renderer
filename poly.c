@@ -95,15 +95,11 @@ static affinetridesc_t r_affinetridesc;
 
 static int d_xdenom;
 static int r_p0[6], r_p1[6], r_p2[6];
-static int ystart;
 static int d_sfrac, d_tfrac;
 static int d_pzbasestep;
 static int d_pzextrastep;
-static int d_light;
 static int d_zi;
-static int d_pdestbasestep;
 static int screenwidth;
-static int d_pdestextrastep;
 static short *d_pz;
 static int r_lstepx;
 static int r_sstepy;
@@ -112,14 +108,12 @@ static int r_tstepy;
 static int r_tstepx;
 static int d_sfracbasestep;
 static int d_tfracbasestep;
-static int d_lightbasestep;
 static int r_lstepy;
 static int d_zibasestep;
 static int r_zistepy;
 static int r_zistepx;
 static int d_sfracextrastep;
 static int d_tfracextrastep;
-static int d_lightextrastep;
 static int d_ziextrastep;
 
 static unsigned int d_zwidth;
@@ -1235,6 +1229,11 @@ struct r_state {
 	int a_ststepxwhole;
 	int a_sstepxfrac;
 	int a_tstepxfrac;
+	int d_light;
+	int d_lightbasestep;
+	int d_lightextrastep;
+	int d_pdestbasestep;
+	int d_pdestextrastep;
 	spanpackage_t *d_pedgespanpackage;
 	spanpackage_t *a_spans;
 	edgetable *pedgetable;
@@ -1455,14 +1454,14 @@ Referenced by D_RasterizeAliasPolySmooth().
 		r->d_pedgespanpackage->tfrac = d_tfrac;
 
 		// FIXME: need to clamp l, s, t, at both ends?
-		r->d_pedgespanpackage->light = d_light;
+		r->d_pedgespanpackage->light = r->d_light;
 		r->d_pedgespanpackage->zi = d_zi;
 
 		r->d_pedgespanpackage++;
 
 		r->errorterm += r->erroradjustup;
 		if (r->errorterm >= 0) {
-			d_pdest += d_pdestextrastep;
+			d_pdest += r->d_pdestextrastep;
 			d_pz += d_pzextrastep;
 			r->d_aspancount += r->d_countextrastep;
 			d_ptex += d_ptexextrastep;
@@ -1475,11 +1474,11 @@ Referenced by D_RasterizeAliasPolySmooth().
 				d_ptex += r_affinetridesc.skinwidth;
 				d_tfrac &= 0xFFFF;
 			}
-			d_light += d_lightextrastep;
+			r->d_light += r->d_lightextrastep;
 			d_zi += d_ziextrastep;
 			r->errorterm -= r->erroradjustdown;
 		} else {
-			d_pdest += d_pdestbasestep;
+			d_pdest += r->d_pdestbasestep;
 			d_pz += d_pzbasestep;
 			r->d_aspancount += r->ubasestep;
 			d_ptex += d_ptexbasestep;
@@ -1491,7 +1490,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 				d_ptex += r_affinetridesc.skinwidth;
 				d_tfrac &= 0xFFFF;
 			}
-			d_light += d_lightbasestep;
+			r->d_light += r->d_lightbasestep;
 			d_zi += d_zibasestep;
 		}
 	} while (--height);
@@ -1579,6 +1578,7 @@ References a_spans, spanpackage_t::count, d_aspancount, d_countextrastep, d_ligh
 Referenced by D_DrawNonSubdiv().
 */
 {
+	int ystart;
 	byte *d_pdest;
 	byte *d_ptex;
 	int initialleftheight, initialrightheight;
@@ -1633,11 +1633,11 @@ Referenced by D_DrawNonSubdiv().
 	d_pzbasestep = d_zwidth + r->ubasestep;
 	d_pzextrastep = d_pzbasestep + 1;
 #endif
-	d_light = plefttop[4];
+	r->d_light = plefttop[4];
 	d_zi = plefttop[5];
 
-	d_pdestbasestep = screenwidth + r->ubasestep;
-	d_pdestextrastep = d_pdestbasestep + 1;
+	r->d_pdestbasestep = screenwidth + r->ubasestep;
+	r->d_pdestextrastep = r->d_pdestbasestep + 1;
 	d_pdest = (byte *) d_viewbuffer + ystart * screenwidth + plefttop[0];
 	d_pz = d_pzbuffer + ystart * d_zwidth + plefttop[0];
 
@@ -1662,7 +1662,7 @@ Referenced by D_DrawNonSubdiv().
 	d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) & 0xFFFF;
 	d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) & 0xFFFF;
 #endif
-	d_lightbasestep = r_lstepy + working_lstepx * r->ubasestep;
+	r->d_lightbasestep = r_lstepy + working_lstepx * r->ubasestep;
 	d_zibasestep = r_zistepy + r_zistepx * r->ubasestep;
 
 	d_ptexextrastep = ((r_sstepy + r_sstepx * r->d_countextrastep) >> 16) +
@@ -1675,7 +1675,7 @@ Referenced by D_DrawNonSubdiv().
 	d_sfracextrastep = (r_sstepy + r_sstepx * r->d_countextrastep) & 0xFFFF;
 	d_tfracextrastep = (r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF;
 #endif
-	d_lightextrastep = d_lightbasestep + working_lstepx;
+	r->d_lightextrastep = r->d_lightbasestep + working_lstepx;
 	d_ziextrastep = d_zibasestep + r_zistepx;
 
 	D_PolysetScanLeftEdge(initialleftheight, d_pdest, d_ptex, d_ptexbasestep, d_ptexextrastep, r);
@@ -1702,11 +1702,11 @@ Referenced by D_DrawNonSubdiv().
 		    (plefttop[3] >> 16) * r_affinetridesc.skinwidth;
 		d_sfrac = 0;
 		d_tfrac = 0;
-		d_light = plefttop[4];
+		r->d_light = plefttop[4];
 		d_zi = plefttop[5];
 
-		d_pdestbasestep = screenwidth + r->ubasestep;
-		d_pdestextrastep = d_pdestbasestep + 1;
+		r->d_pdestbasestep = screenwidth + r->ubasestep;
+		r->d_pdestextrastep = r->d_pdestbasestep + 1;
 		d_pdest =
 		    (byte *) d_viewbuffer + ystart * screenwidth + plefttop[0];
 #if id386
@@ -1734,7 +1734,7 @@ Referenced by D_DrawNonSubdiv().
 		d_sfracbasestep = (r_sstepy + r_sstepx * r->ubasestep) & 0xFFFF;
 		d_tfracbasestep = (r_tstepy + r_tstepx * r->ubasestep) & 0xFFFF;
 #endif
-		d_lightbasestep = r_lstepy + working_lstepx * r->ubasestep;
+		r->d_lightbasestep = r_lstepy + working_lstepx * r->ubasestep;
 		d_zibasestep = r_zistepy + r_zistepx * r->ubasestep;
 
 		d_ptexextrastep =
@@ -1753,7 +1753,7 @@ Referenced by D_DrawNonSubdiv().
 		d_tfracextrastep =
 		    (r_tstepy + r_tstepx * r->d_countextrastep) & 0xFFFF;
 #endif
-		d_lightextrastep = d_lightbasestep + working_lstepx;
+		r->d_lightextrastep = r->d_lightbasestep + working_lstepx;
 		d_ziextrastep = d_zibasestep + r_zistepx;
 
 		D_PolysetScanLeftEdge(height, d_pdest, d_ptex, d_ptexbasestep, d_ptexextrastep, r);
