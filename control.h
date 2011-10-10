@@ -19,6 +19,10 @@ struct control_data {
 	void *data;
 	void *view;
 	void *zbuffer;
+	float aliasxscale;
+	float aliasyscale;
+	float aliasxcenter;
+	float aliasycenter;
 };
 #define WIDTH	640
 #define HEIGHT	480

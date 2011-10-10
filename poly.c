@@ -999,7 +999,6 @@ static model_t worldmodel;
 static int cl_minlight = 1;	/* FIXME */
 static int d_lightstylevalue[256];
 static dlight_t cl_dlights[MAX_DLIGHTS];
-static float r_fullbrightSkins;
 
 /* end of r_alias symbols */
 
@@ -2451,13 +2450,14 @@ Referenced by R_AliasDrawModel().
 		pfv[1] = &pfinalverts[ptri->vertindex[1]];
 		pfv[2] = &pfinalverts[ptri->vertindex[2]];
 
-		if (pfv[0]->flags & pfv[1]->flags & pfv[2]->
-		    flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
+		if (pfv[0]->flags & pfv[1]->
+		    flags & pfv[2]->flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
 			continue;	// completely clipped
 
 		if (!
-		    ((pfv[0]->flags | pfv[1]->flags | pfv[2]->
-		      flags) & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))) {
+		    ((pfv[0]->flags | pfv[1]->
+		      flags | pfv[2]->flags) & (ALIAS_XY_CLIP_MASK |
+						ALIAS_Z_CLIP))) {
 			// totally unclipped
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
@@ -3892,7 +3892,8 @@ Referenced by AddParticleTrail(), Cam_Track(), Cam_TryFlyby(), Classic_ParticleT
 	return sqrt(length);
 }
 
-static void R_AliasSetupLighting(entity_t * ent, int *r_ambientlight)
+static void R_AliasSetupLighting(entity_t * ent, int *r_ambientlight,
+				 float r_fullbrightSkins)
 /*
 Definition at line 537 of file r_alias.c.
 
@@ -4085,7 +4086,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	R_AliasSetupSkin(ent, pmdl, paliashdr);
 	R_AliasSetUpTransform(ent, ent->trivial_accept, pmdl, modelorg,
 			      rs.aliasxscale, rs.aliasyscale);
-	R_AliasSetupLighting(ent, &r_ambientlight);
+	R_AliasSetupLighting(ent, &r_ambientlight, 0.0);
 	R_AliasSetupFrame(ent, paliashdr, &rv);
 
 	if (!ent->colormap)
