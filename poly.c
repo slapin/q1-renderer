@@ -804,19 +804,11 @@ typedef struct {
 #endif
 } dlight_t;
 
-static finalvert_t *pfinalverts;
-static trivertx_t *r_oldapverts;
-static trivertx_t *r_apverts;
+struct r_verts {
+	trivertx_t *r_oldapverts;
+	trivertx_t *r_apverts;
+};
 static refdef_t r_refdef;
-static vec3_t r_entorigin;	// the currently rendering entity in world
-				// coordinates
-static vec3_t r_origin;
-static vec3_t modelorg /*, base_modelorg */ ;
-static model_t *pmodel;
-static int r_lerpframes = 1;
-static float r_framelerp;
-static float ziscale;
-static float r_lerpdistance;
 static float aliastransform[3][4];
 static const float r_avertexnormals[NUMVERTEXNORMALS][3] = {
 	{-0.525731, 0.000000, 0.850651},
@@ -984,9 +976,7 @@ static const float r_avertexnormals[NUMVERTEXNORMALS][3] = {
 };
 
 static vec3_t r_plightvec;
-int r_ambientlight;
 float r_shadelight;
-float aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
 static finalvert_t fv[2][8];
 static auxvert_t av[8];
 static float r_nearclip = 1.0;
@@ -1966,7 +1956,9 @@ do {                                                                \
 
 static void R_AliasTransformFinalVert(entity_t * ent, finalvert_t * fv,
 				      auxvert_t * av, trivertx_t * pverts1,
-				      trivertx_t * pverts2, stvert_t * pstverts)
+				      trivertx_t * pverts2, stvert_t * pstverts,
+				      float r_framelerp, float r_lerpdistance,
+				      int r_ambientlight)
 /*
 Definition at line 373 of file r_alias.c.
 
@@ -2019,7 +2011,10 @@ Referenced by R_AliasPreparePoints().
 	fv->v[4] = temp;
 }
 
-static void R_AliasProjectFinalVert(finalvert_t * fv, auxvert_t * av)
+static void R_AliasProjectFinalVert(finalvert_t * fv, auxvert_t * av,
+				    float ziscale, float aliasxscale,
+				    float aliasyscale, float aliasxcenter,
+				    float aliasycenter)
 /*
 Definition at line 456 of file r_alias.c.
 
@@ -2037,9 +2032,18 @@ Referenced by R_Alias_clip_z(), and R_AliasPreparePoints().
 	fv->v[1] = (av->fv[1] * aliasyscale * zi) + aliasycenter;
 }
 
+struct r_scale {
+	float ziscale;
+	float aliasxscale;
+	float aliasyscale;
+	float aliasxcenter;
+	float aliasycenter;
+};
+
 static int R_AliasClip(finalvert_t * in, finalvert_t * out, int flag, int count,
 		       void (*clip) (finalvert_t * pfv0, finalvert_t * pfv1,
-				     finalvert_t * out))
+				     finalvert_t * out, struct r_scale * rs),
+		       struct r_scale *rs)
 /*
 Definition at line 200 of file r_aclip.c.
 
@@ -2060,7 +2064,7 @@ Referenced by R_AliasClipTriangle().
 		if (flags && oldflags)
 			continue;
 		if (oldflags ^ flags) {
-			clip(&in[j], &in[i], &out[k]);
+			clip(&in[j], &in[i], &out[k], rs);
 			out[k].flags = 0;
 			if (out[k].v[0] < r_refdef.aliasvrect.x)
 				out[k].flags |= ALIAS_LEFT_CLIP;
@@ -2089,7 +2093,7 @@ pfv0 is the unclipped vertex, pfv1 is the z-clipped vertex
 ================
 */
 static void R_Alias_clip_z(finalvert_t * pfv0, finalvert_t * pfv1,
-			   finalvert_t * out)
+			   finalvert_t * out, struct r_scale *rs)
 /*
 Definition at line 56 of file r_aclip.c.
 
@@ -2128,7 +2132,10 @@ Referenced by R_AliasClipTriangle().
 		out->v[4] = pfv1->v[4] + (pfv0->v[4] - pfv1->v[4]) * scale;
 	}
 
-	R_AliasProjectFinalVert(out, &avout);
+	R_AliasProjectFinalVert(out, &avout, rs->ziscale,
+				rs->aliasxscale,
+				rs->aliasyscale,
+				rs->aliasxcenter, rs->aliasycenter);
 
 	if (out->v[0] < r_refdef.aliasvrect.x)
 		out->flags |= ALIAS_LEFT_CLIP;
@@ -2141,7 +2148,7 @@ Referenced by R_AliasClipTriangle().
 }
 
 static void R_Alias_clip_left(finalvert_t * pfv0, finalvert_t * pfv1,
-			      finalvert_t * out)
+			      finalvert_t * out, struct r_scale *rs)
 /*
 Definition at line 106 of file r_aclip.c.
 
@@ -2171,7 +2178,7 @@ Referenced by R_AliasClipTriangle().
 }
 
 static void R_Alias_clip_right(finalvert_t * pfv0, finalvert_t * pfv1,
-			       finalvert_t * out)
+			       finalvert_t * out, struct r_scale *rs)
 /*
 Definition at line 128 of file r_aclip.c.
 
@@ -2201,7 +2208,7 @@ Referenced by R_AliasClipTriangle().
 }
 
 static void R_Alias_clip_bottom(finalvert_t * pfv0, finalvert_t * pfv1,
-				finalvert_t * out)
+				finalvert_t * out, struct r_scale *rs)
 /*
 Definition at line 173 of file r_aclip.c.
 
@@ -2233,7 +2240,7 @@ Referenced by R_AliasClipTriangle().
 }
 
 static void R_Alias_clip_top(finalvert_t * pfv0, finalvert_t * pfv1,
-			     finalvert_t * out)
+			     finalvert_t * out, struct r_scale *rs)
 /*
 Definition at line 151 of file r_aclip.c.
 
@@ -2266,7 +2273,8 @@ static void R_AliasClipTriangle(mtriangle_t * ptri, pixel_t * d_viewbuffer,
 				short *d_pzbuffer, byte * acolormap,
 				struct r_state *r, int d_zwidth,
 				int screenwidth, int skinwidth,
-				auxvert_t * pauxverts)
+				auxvert_t * pauxverts,
+				finalvert_t * pfinalverts, struct r_scale *rs)
 /*
 Definition at line 245 of file r_aclip.c.
 
@@ -2303,7 +2311,8 @@ Referenced by R_AliasPreparePoints().
 		for (i = 0; i < 3; i++)
 			av[i] = pauxverts[ptri->vertindex[i]];
 
-		k = R_AliasClip(fv[0], fv[1], ALIAS_Z_CLIP, 3, R_Alias_clip_z);
+		k = R_AliasClip(fv[0], fv[1], ALIAS_Z_CLIP, 3, R_Alias_clip_z,
+				rs);
 		if (k == 0)
 			return;
 
@@ -2316,7 +2325,7 @@ Referenced by R_AliasPreparePoints().
 
 	if (clipflags & ALIAS_LEFT_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
-				ALIAS_LEFT_CLIP, k, R_Alias_clip_left);
+				ALIAS_LEFT_CLIP, k, R_Alias_clip_left, rs);
 		if (k == 0)
 			return;
 
@@ -2325,7 +2334,7 @@ Referenced by R_AliasPreparePoints().
 
 	if (clipflags & ALIAS_RIGHT_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
-				ALIAS_RIGHT_CLIP, k, R_Alias_clip_right);
+				ALIAS_RIGHT_CLIP, k, R_Alias_clip_right, rs);
 		if (k == 0)
 			return;
 
@@ -2334,7 +2343,7 @@ Referenced by R_AliasPreparePoints().
 
 	if (clipflags & ALIAS_BOTTOM_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
-				ALIAS_BOTTOM_CLIP, k, R_Alias_clip_bottom);
+				ALIAS_BOTTOM_CLIP, k, R_Alias_clip_bottom, rs);
 		if (k == 0)
 			return;
 
@@ -2343,7 +2352,7 @@ Referenced by R_AliasPreparePoints().
 
 	if (clipflags & ALIAS_TOP_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
-				ALIAS_TOP_CLIP, k, R_Alias_clip_top);
+				ALIAS_TOP_CLIP, k, R_Alias_clip_top, rs);
 		if (k == 0)
 			return;
 
@@ -2383,7 +2392,11 @@ static void R_AliasPreparePoints(entity_t * ent, pixel_t * d_viewbuffer,
 				 short *d_pzbuffer, byte * acolormap,
 				 struct r_state *r, unsigned int d_zwidth,
 				 int screenwidth, int skinwidth, mdl_t * pmdl,
-				 aliashdr_t * paliashdr, auxvert_t * pauxverts)
+				 aliashdr_t * paliashdr, auxvert_t * pauxverts,
+				 struct r_verts *rv, finalvert_t * pfinalverts,
+				 float r_framelerp, float ziscale,
+				 float r_lerpdistance, int r_ambientlight,
+				 struct r_scale *rs)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2406,13 +2419,18 @@ Referenced by R_AliasDrawModel().
 	av = pauxverts;
 
 	for (i = 0; i < r_anumverts;
-	     i++, fv++, av++, r_oldapverts++, r_apverts++, pstverts++) {
-		R_AliasTransformFinalVert(ent, fv, av, r_oldapverts, r_apverts,
-					  pstverts);
+	     i++, fv++, av++, rv->r_oldapverts++, rv->r_apverts++, pstverts++) {
+		R_AliasTransformFinalVert(ent, fv, av, rv->r_oldapverts,
+					  rv->r_apverts, pstverts, r_framelerp,
+					  r_lerpdistance, r_ambientlight);
 		if (av->fv[2] < 1.f) {
 			fv->flags |= ALIAS_Z_CLIP;
 		} else {
-			R_AliasProjectFinalVert(fv, av);
+			R_AliasProjectFinalVert(fv, av, rs->ziscale,
+						rs->aliasxscale,
+						rs->aliasyscale,
+						rs->aliasxcenter,
+						rs->aliasycenter);
 
 			if (fv->v[0] < r_refdef.aliasvrect.x)
 				fv->flags |= ALIAS_LEFT_CLIP;
@@ -2449,14 +2467,19 @@ Referenced by R_AliasDrawModel().
 			// partially clipped
 			R_AliasClipTriangle(ptri, d_viewbuffer, d_pzbuffer,
 					    acolormap, r, d_zwidth, screenwidth,
-					    skinwidth, pauxverts);
+					    skinwidth, pauxverts, pfinalverts,
+					    rs);
 		}
 	}
 }
 
 static void R_AliasTransformAndProjectFinalVerts(finalvert_t * fv,
 						 stvert_t * pstverts,
-						 int r_anumverts)
+						 int r_anumverts,
+						 struct r_verts *rv,
+						 float r_framelerp,
+						 int r_ambientlight,
+						 struct r_scale *rs)
 /*
 Definition at line 412 of file r_alias.c.
 
@@ -2470,8 +2493,8 @@ Referenced by R_AliasPrepareUnclippedPoints().
 	trivertx_t *pverts1, *pverts2;
 	vec3_t interpolated_verts, interpolated_norm;
 
-	pverts1 = r_oldapverts;
-	pverts2 = r_apverts;
+	pverts1 = rv->r_oldapverts;
+	pverts2 = rv->r_apverts;
 
 	for (i = 0; i < r_anumverts;
 	     i++, fv++, pverts1++, pverts2++, pstverts++) {
@@ -2488,10 +2511,10 @@ Referenced by R_AliasPrepareUnclippedPoints().
 
 		fv->v[0] =
 		    ((DotProduct(interpolated_verts, aliastransform[0]) +
-		      aliastransform[0][3]) * zi) + aliasxcenter;
+		      aliastransform[0][3]) * zi) + rs->aliasxcenter;
 		fv->v[1] =
 		    ((DotProduct(interpolated_verts, aliastransform[1]) +
-		      aliastransform[1][3]) * zi) + aliasycenter;
+		      aliastransform[1][3]) * zi) + rs->aliasycenter;
 #if 0
 		printf("%s:%d fv[0] = %d fv[1] = %d\n", __func__, __LINE__,
 		       fv->v[0], fv->v[1]);
@@ -2564,7 +2587,11 @@ static void R_AliasPrepareUnclippedPoints(pixel_t * d_viewbuffer,
 					  short *d_pzbuffer, byte * acolormap,
 					  struct r_state *r, int d_zwidth,
 					  int screenwidth, int skinwidth,
-					  mdl_t * pmdl, aliashdr_t * paliashdr)
+					  mdl_t * pmdl, aliashdr_t * paliashdr,
+					  struct r_verts *rv,
+					  finalvert_t * pfinalverts,
+					  float r_framelerp, int r_ambientlight,
+					  struct r_scale *rs)
 /*
 Definition at line 466 of file r_alias.c.
 
@@ -2580,7 +2607,8 @@ Referenced by R_AliasDrawModel().
 	r_anumverts = pmdl->numverts;
 
 	R_AliasTransformAndProjectFinalVerts(pfinalverts, pstverts,
-					     r_anumverts);
+					     r_anumverts, rv, r_framelerp,
+					     r_ambientlight, rs);
 
 	if (r_affinetridesc.drawtype)
 		D_PolysetDrawFinalVerts(pfinalverts, r_anumverts, d_viewbuffer,
@@ -3112,7 +3140,6 @@ static model_t *Mod_LoadModel(model_t * mod, qbool crash)
 No doxygen info for this function
 */
 {
-	void *d;
 	unsigned *buf;
 	int filesize;
 
@@ -3305,7 +3332,8 @@ static int dump_matrix(char *func, int l, char *prefix, char *m,
 #define DUMP_MATRIX(m) dump_matrix(__func__, __LINE__, "matrix", #m, m);
 
 static void R_AliasSetUpTransform(entity_t * ent, int trivial_accept,
-				  mdl_t * pmdl)
+				  mdl_t * pmdl, vec3_t modelorg,
+				  float aliasxscale, float aliasyscale)
 /*
 Definition at line 122 of file r_alias.c.
 
@@ -3431,7 +3459,8 @@ Referenced by R_AliasCheckBBox().
 }
 
 static qbool R_AliasCheckBBox(entity_t * ent, mdl_t * pmdl,
-			      aliashdr_t * paliashdr)
+			      aliashdr_t * paliashdr, vec3_t modelorg,
+			      float r_framelerp, struct r_scale *rs)
 /*
 Definition at line 122 of file r_alias.c.
 
@@ -3458,7 +3487,8 @@ Referenced by R_AliasDrawModel().
 	ent->trivial_accept = 0;
 
 	// expand, rotate, and translate points into worldspace
-	R_AliasSetUpTransform(ent, 0, pmdl);
+	R_AliasSetUpTransform(ent, 0, pmdl, modelorg, rs->aliasxscale,
+			      rs->aliasyscale);
 #if 0
 	for (j = 0; j < 3; j++)
 		for (k = 0; k < 4; k++)
@@ -3862,7 +3892,7 @@ Referenced by AddParticleTrail(), Cam_Track(), Cam_TryFlyby(), Classic_ParticleT
 	return sqrt(length);
 }
 
-static void R_AliasSetupLighting(entity_t * ent)
+static void R_AliasSetupLighting(entity_t * ent, int *r_ambientlight)
 /*
 Definition at line 537 of file r_alias.c.
 
@@ -3919,9 +3949,9 @@ Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
 		ambientlight = shadelight = minlight;
 
 	// guarantee that no vertex will ever be lit below LIGHT_MIN, so we don't have to clamp off the bottom
-	r_ambientlight = max(ambientlight, LIGHT_MIN);
-	r_ambientlight = (255 - r_ambientlight) << VID_CBITS;
-	r_ambientlight = max(r_ambientlight, LIGHT_MIN);
+	*r_ambientlight = max(ambientlight, LIGHT_MIN);
+	*r_ambientlight = (255 - *r_ambientlight) << VID_CBITS;
+	*r_ambientlight = max(*r_ambientlight, LIGHT_MIN);
 	r_shadelight = max(shadelight, 0);
 	r_shadelight *= VID_GRADES;
 
@@ -3966,10 +3996,11 @@ static void R_AliasSetupFrameVerts(int frame, trivertx_t ** verts,
 }
 
 //set r_oldapverts, r_apverts
-static void R_AliasSetupFrame(entity_t * ent, aliashdr_t * paliashdr)
+static void R_AliasSetupFrame(entity_t * ent, aliashdr_t * paliashdr,
+			      struct r_verts *rv)
 {
-	R_AliasSetupFrameVerts(ent->oldframe, &r_oldapverts, paliashdr);
-	R_AliasSetupFrameVerts(ent->frame, &r_apverts, paliashdr);
+	R_AliasSetupFrameVerts(ent->oldframe, &rv->r_oldapverts, paliashdr);
+	R_AliasSetupFrameVerts(ent->frame, &rv->r_apverts, paliashdr);
 }
 
 static void D_PolysetUpdateTables(int skinwidth)
@@ -3984,7 +4015,10 @@ static void D_PolysetUpdateTables(int skinwidth)
 
 static void R_AliasDrawModel(entity_t * ent, pixel_t * d_viewbuffer,
 			     short *d_pzbuffer, unsigned int d_zwidth,
-			     int screenwidth)
+			     int screenwidth, vec3_t r_origin,
+			     int r_lerpframes, float r_lerpdistance,
+			     float aliasxscale, float aliasyscale,
+			     float aliasxcenter, float aliasycenter)
 /*
 Definition at line 629 of file r_alias.c.
 
@@ -3997,13 +4031,24 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	mdl_t *pmdl;
 	aliashdr_t *paliashdr;
 	auxvert_t *pauxverts;
+	struct r_verts rv;
+	finalvert_t *pfinalverts;
+	vec3_t modelorg;
+	model_t *pmodel;
+	float r_framelerp;
+	float ziscale;
+	int r_ambientlight;
+	struct r_scale rs;
+	rs.aliasxscale = aliasxscale;
+	rs.aliasyscale = aliasyscale;
+	rs.aliasxcenter = aliasxcenter;
+	rs.aliasycenter = aliasycenter;
 
 	finalvert_t finalverts[MAXALIASVERTS +
 			       ((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
 	auxvert_t auxverts[MAXALIASVERTS];
 
-	VectorCopy(ent->origin, r_entorigin);
-	VectorSubtract(r_origin, r_entorigin, modelorg);
+	VectorSubtract(r_origin, ent->origin, modelorg);
 
 	pmodel = ent->model;
 	paliashdr = Mod_Extradata(pmodel);
@@ -4027,7 +4072,8 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 		r_framelerp = min(ent->framelerp, 1);
 
 	if (!(ent->renderfx & RF_WEAPONMODEL)) {
-		if (!R_AliasCheckBBox(ent, pmdl, paliashdr))
+		if (!R_AliasCheckBBox(ent, pmdl, paliashdr, modelorg,
+				      r_framelerp, &rs))
 			return;
 	}
 	// cache align
@@ -4037,39 +4083,44 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	pauxverts = &auxverts[0];
 
 	R_AliasSetupSkin(ent, pmdl, paliashdr);
-	R_AliasSetUpTransform(ent, ent->trivial_accept, pmdl);
-	R_AliasSetupLighting(ent);
-	R_AliasSetupFrame(ent, paliashdr);
+	R_AliasSetUpTransform(ent, ent->trivial_accept, pmdl, modelorg,
+			      rs.aliasxscale, rs.aliasyscale);
+	R_AliasSetupLighting(ent, &r_ambientlight);
+	R_AliasSetupFrame(ent, paliashdr, &rv);
 
 	if (!ent->colormap)
 		Sys_Error("R_AliasDrawModel: !ent->colormap");
 
 	r_affinetridesc.drawtype = (ent->trivial_accept == 3);
 
-	if (r_affinetridesc.drawtype) {
+	if (r_affinetridesc.drawtype)
 		D_PolysetUpdateTables(r_affinetridesc.skinwidth);	// FIXME: precalc...
-	} else {
 #ifdef id386
+	else
 		D_Aff8Patch(ent->colormap);
 #endif
-	}
 
 	if (!(ent->renderfx & RF_WEAPONMODEL))
 		ziscale = (float)0x8000 *(float)0x10000;
 	else
 	ziscale = (float)0x8000 *(float)0x10000 *3.0;
 
+	rs.ziscale = ziscale;
+
 	if (ent->trivial_accept)
 		R_AliasPrepareUnclippedPoints(d_viewbuffer, d_pzbuffer,
 					      ent->colormap, &r, d_zwidth,
 					      screenwidth,
 					      r_affinetridesc.skinwidth, pmdl,
-					      paliashdr);
+					      paliashdr, &rv, pfinalverts,
+					      r_framelerp, r_ambientlight, &rs);
 	else
 		R_AliasPreparePoints(ent, d_viewbuffer, d_pzbuffer,
 				     ent->colormap, &r, d_zwidth, screenwidth,
 				     r_affinetridesc.skinwidth, pmdl,
-				     paliashdr, pauxverts);
+				     paliashdr, pauxverts, &rv, pfinalverts,
+				     r_framelerp, ziscale, r_lerpdistance,
+				     r_ambientlight, &rs);
 }
 
 static void write_xbm(char *name, int width, int height, unsigned char *pixdata)
@@ -4115,9 +4166,12 @@ static void loopfunc(void *data)
 	memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
 	memset(d_viewbuffer, 0, HEIGHT * WIDTH);
 	AngleVectors(r_refdef.viewangles, vpn, vright, vup);
-	R_AliasDrawModel(ent, d_viewbuffer, d_pzbuffer,
-			 ZWIDTH /* Z-Buffer width in pixels??? */ ,
-			 WIDTH /* Screen width */ );
+	R_AliasDrawModel(ent, d_viewbuffer, d_pzbuffer, ZWIDTH,	/* Z-Buffer width in pixels??? */
+			 WIDTH,	/* Screen width */
+			 cd->origin, 1,	/* r_lerpframes */
+			 1.0,	/* r_lerpdistance */
+			 cd->aliasxscale,
+			 cd->aliasyscale, cd->aliasxcenter, cd->aliasycenter);
 	updatescr(d_viewbuffer);
 //      ent->frame = ent->frame ^ 1;
 //      ent->oldframe = ent->frame;
@@ -4134,6 +4188,7 @@ int main(int argc, char *argv[])
 	pixel_t *d_viewbuffer;
 	short *d_pzbuffer;
 	float res_scale;
+	vec3_t r_origin;
 	initgfx();
 
 	strcpy(m.name, "test");
@@ -4170,10 +4225,6 @@ int main(int argc, char *argv[])
 	r_refdef.fvrecty = (float)r_refdef.aliasvrect.y;
 	r_refdef.fvrectright = (float)r_refdef.aliasvrectright;
 	r_refdef.fvrectbottom = (float)r_refdef.aliasvrectbottom;
-	aliasxcenter = r_refdef.aliasvrect.x + r_refdef.aliasvrectbottom / 2;
-	aliasycenter = r_refdef.aliasvrect.y + r_refdef.aliasvrectbottom / 2;
-	xcenter = (float)aliasxcenter;
-	ycenter = (float)aliasycenter;
 	opt = 0;
 	strcpy(fname, "viewbuf.png");
 	while (1) {
@@ -4188,56 +4239,6 @@ int main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-	printf("Optargs: %d fname = %s\n", argc, fname);
-	for (i = 0; i < argc; i++) {
-		switch (i) {
-		case 0:
-			break;
-		case 1:
-			aliasxscale = atof(argv[i]);
-			break;
-		case 2:
-			aliasyscale = atof(argv[i]);
-			break;
-		case 3:
-			ent.origin[0] = atof(argv[i]);
-			break;
-		case 4:
-			ent.origin[1] = atof(argv[i]);
-			break;
-		case 5:
-			ent.origin[2] = atof(argv[i]);
-			break;
-		case 6:
-			vright[0] = atof(argv[i]);
-			break;
-		case 7:
-			vright[1] = atof(argv[i]);
-			break;
-		case 8:
-			vright[2] = atof(argv[i]);
-			break;
-		case 9:
-			vup[0] = atof(argv[i]);
-			break;
-		case 10:
-			vup[1] = atof(argv[i]);
-			break;
-		case 11:
-			vup[2] = atof(argv[i]);
-			break;
-		case 12:
-			vpn[0] = atof(argv[i]);
-			break;
-		case 13:
-			vpn[1] = atof(argv[i]);
-			break;
-		case 14:
-			vpn[2] = atof(argv[i]);
-		default:
-			break;
-		}
-	}
 #if 0
 	mtriangle_t tris[10];
 	finalvert_t verts[30];
@@ -4266,10 +4267,6 @@ int main(int argc, char *argv[])
 	ent.origin[0] = 0.0;
 	ent.origin[1] = 5;
 	ent.origin[2] = 5.0;
-	xscale = WIDTH / 2.0;
-	yscale = xscale * ((float)HEIGHT / (float)WIDTH) * (320.0 / 240.0);
-	aliasxscale = xscale;
-	aliasyscale = yscale;
 	vup[1] = 1.0;
 	vright[0] = 1.0;
 	cd = malloc(sizeof(struct control_data));
@@ -4281,6 +4278,16 @@ int main(int argc, char *argv[])
 	cd->yaw = &r_refdef.viewangles[YAW];
 	cd->pitch = &r_refdef.viewangles[PITCH];
 	cd->roll = &r_refdef.viewangles[ROLL];
+	cd->aliasxcenter =
+	    r_refdef.aliasvrect.x + r_refdef.aliasvrectbottom / 2;
+	cd->aliasycenter =
+	    r_refdef.aliasvrect.y + r_refdef.aliasvrectbottom / 2;
+	xcenter = cd->aliasxcenter;
+	ycenter = cd->aliasycenter;
+	xscale = WIDTH / 2.0;
+	yscale = xscale * ((float)HEIGHT / (float)WIDTH) * (320.0 / 240.0);
+	cd->aliasxscale = xscale;
+	cd->aliasyscale = yscale;
 	for (i = 0;
 	     i < sizeof(d_lightstylevalue) / sizeof(d_lightstylevalue[0]); i++)
 		d_lightstylevalue[i] = 256;
