@@ -804,7 +804,6 @@ typedef struct {
 #endif
 } dlight_t;
 
-static int r_anumverts;
 static finalvert_t *pfinalverts;
 static auxvert_t *pauxverts;
 static trivertx_t *r_oldapverts;
@@ -2484,6 +2483,7 @@ Referenced by R_AliasDrawModel().
 	auxvert_t *av;
 	mtriangle_t *ptri;
 	finalvert_t *pfv[3];
+	int r_anumverts;
 
 	pstverts = (stvert_t *) ((byte *) paliashdr + paliashdr->stverts);
 	r_anumverts = pmdl->numverts;
@@ -2518,13 +2518,14 @@ Referenced by R_AliasDrawModel().
 		pfv[1] = &pfinalverts[ptri->vertindex[1]];
 		pfv[2] = &pfinalverts[ptri->vertindex[2]];
 
-		if (pfv[0]->flags & pfv[1]->flags & pfv[2]->
-		    flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
+		if (pfv[0]->flags & pfv[1]->
+		    flags & pfv[2]->flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
 			continue;	// completely clipped
 
 		if (!
-		    ((pfv[0]->flags | pfv[1]->flags | pfv[2]->
-		      flags) & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))) {
+		    ((pfv[0]->flags | pfv[1]->
+		      flags | pfv[2]->flags) & (ALIAS_XY_CLIP_MASK |
+						ALIAS_Z_CLIP))) {
 			// totally unclipped
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
@@ -2540,7 +2541,8 @@ Referenced by R_AliasDrawModel().
 }
 
 static void R_AliasTransformAndProjectFinalVerts(finalvert_t * fv,
-						 stvert_t * pstverts)
+						 stvert_t * pstverts,
+						 int r_anumverts)
 /*
 Definition at line 412 of file r_alias.c.
 
@@ -2658,11 +2660,13 @@ Referenced by R_AliasDrawModel().
 */
 {
 	stvert_t *pstverts;
+	int r_anumverts;
 
 	pstverts = (stvert_t *) ((byte *) paliashdr + paliashdr->stverts);
 	r_anumverts = pmdl->numverts;
 
-	R_AliasTransformAndProjectFinalVerts(pfinalverts, pstverts);
+	R_AliasTransformAndProjectFinalVerts(pfinalverts, pstverts,
+					     r_anumverts);
 
 	if (r_affinetridesc.drawtype)
 		D_PolysetDrawFinalVerts(pfinalverts, r_anumverts, d_viewbuffer,
