@@ -310,11 +310,9 @@ void stopgfx(void)
 	allegro_exit();
 }
 
-
-
 void register_control_key(struct control_data *cd,
-	int key_up, int key_down, float *value,
-	float d, float vmin, float vmax)
+			  int key_up, int key_down, float *value,
+			  float d, float vmin, float vmax)
 {
 	cd->keys[cd->nkeys].kup = key_up;
 	cd->keys[cd->nkeys].kdown = key_down;
@@ -325,121 +323,113 @@ void register_control_key(struct control_data *cd,
 	cd->nkeys++;
 }
 
-void do_key_loop(void (*loopfunc)(void *data), void *data)
+void do_key_loop(void (*loopfunc) (void *data), void *data)
 {
 	int i;
 	struct control_data *cd = data;
 	register_control_key(cd, KEY_LEFT, KEY_RIGHT, &cd->origin[0], .1,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
 	register_control_key(cd, KEY_UP, KEY_DOWN, &cd->origin[1], .1,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
 	register_control_key(cd, KEY_Z, KEY_X, &cd->origin[2], .01,
-	-1000.0, 1000.0);
-	register_control_key(cd, KEY_Q, KEY_A, cd->yaw, .1,
-	-1000.0, 1000.0);
-	register_control_key(cd, KEY_W, KEY_S, cd->pitch, .5,
-	-1000.0, 1000.0);
-	register_control_key(cd, KEY_E, KEY_D, cd->roll, .5,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
+	register_control_key(cd, KEY_Q, KEY_A, cd->yaw, .1, -1000.0, 1000.0);
+	register_control_key(cd, KEY_W, KEY_S, cd->pitch, .5, -1000.0, 1000.0);
+	register_control_key(cd, KEY_E, KEY_D, cd->roll, .5, -1000.0, 1000.0);
 #if 0
 	register_control_key(cd, KEY_R, KEY_F, &cd->vright[0], 1.,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
 	register_control_key(cd, KEY_T, KEY_G, &cd->vright[1], 1.,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
 	register_control_key(cd, KEY_Y, KEY_H, &cd->vright[2], 1.,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
 	register_control_key(cd, KEY_U, KEY_J, &cd->vpn[0], 1.,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
 	register_control_key(cd, KEY_I, KEY_K, &cd->vpn[1], 1.,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
 	register_control_key(cd, KEY_O, KEY_L, &cd->vpn[2], 1.,
-	-1000.0, 1000.0);
+			     -1000.0, 1000.0);
 #endif
-	while(1) {
+	while (1) {
 		if (key[KEY_ESC])
 			break;
 		for (i = 0; i < cd->nkeys; i++) {
 			if (key[cd->keys[i].kup]) {
 				*(cd->keys[i].value) += cd->keys[i].d;
 				if (*(cd->keys[i].value) > cd->keys[i].max)
-					*(cd->keys[i].value) =
-					cd->keys[i].max;
+					*(cd->keys[i].value) = cd->keys[i].max;
 			}
 			if (key[cd->keys[i].kdown]) {
 				*(cd->keys[i].value) -= cd->keys[i].d;
 				if (*(cd->keys[i].value) < cd->keys[i].min)
-					*(cd->keys[i].value) =
-					cd->keys[i].min;
+					*(cd->keys[i].value) = cd->keys[i].min;
 			}
 		}
 		loopfunc(data);
 	}
 }
 
-void write_png_file(char* file_name, int width,
-		int height,
-		const unsigned char *buffer)
+void write_png_file(char *file_name, int width,
+		    int height, const unsigned char *buffer)
 {
 	png_structp png_ptr;
 	png_infop info_ptr;
 	PALETTE pal;
 	png_color palette[256];
-	const unsigned char ** row_pointers = malloc(height * sizeof(unsigned char *));
+	const unsigned char **row_pointers =
+	    malloc(height * sizeof(unsigned char *));
 	int i;
-        /* create file */
-        FILE *fp = fopen(file_name, "wb");
-        if (!fp)
+	/* create file */
+	FILE *fp = fopen(file_name, "wb");
+	if (!fp)
 		return;
 	for (i = 0; i < height; i++)
 		row_pointers[i] = buffer + width * i;
 	get_palette(pal);
-	for(i = 0; i < 256; i++) {
+	for (i = 0; i < 256; i++) {
 		palette[i].red = pal[i].r;
 		palette[i].green = pal[i].g;
 		palette[i].blue = pal[i].b;
 	}
 
-        /* initialize stuff */
-        png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+	/* initialize stuff */
+	png_ptr =
+	    png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
 
-        if (!png_ptr)
+	if (!png_ptr)
 		return;
 
-        info_ptr = png_create_info_struct(png_ptr);
-        if (!info_ptr)
+	info_ptr = png_create_info_struct(png_ptr);
+	if (!info_ptr)
 		return;
 
-        if (setjmp(png_jmpbuf(png_ptr)))
+	if (setjmp(png_jmpbuf(png_ptr)))
 		return;
 
-        png_init_io(png_ptr, fp);
+	png_init_io(png_ptr, fp);
 
-
-        /* write header */
-        if (setjmp(png_jmpbuf(png_ptr)))
+	/* write header */
+	if (setjmp(png_jmpbuf(png_ptr)))
 		return;
 
-        png_set_IHDR(png_ptr, info_ptr, width, height,
-                     8, PNG_COLOR_TYPE_PALETTE, PNG_INTERLACE_NONE,
-                     PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+	png_set_IHDR(png_ptr, info_ptr, width, height,
+		     8, PNG_COLOR_TYPE_PALETTE, PNG_INTERLACE_NONE,
+		     PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
 
 	png_set_PLTE(png_ptr, info_ptr, palette, 256);
-        png_write_info(png_ptr, info_ptr);
+	png_write_info(png_ptr, info_ptr);
 
-
-        /* write bytes */
-        if (setjmp(png_jmpbuf(png_ptr)))
+	/* write bytes */
+	if (setjmp(png_jmpbuf(png_ptr)))
 		return;
 
-        png_write_image(png_ptr, row_pointers);
+	png_write_image(png_ptr, row_pointers);
 
-
-        /* end write */
-        if (setjmp(png_jmpbuf(png_ptr)))
+	/* end write */
+	if (setjmp(png_jmpbuf(png_ptr)))
 		return;
 
-        png_write_end(png_ptr, NULL);
+	png_write_end(png_ptr, NULL);
 
-        fclose(fp);
+	fclose(fp);
 }
-
