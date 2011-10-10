@@ -991,7 +991,6 @@ static const aedge_t aedges[12] = {
 };
 
 static float r_resfudge;
-static model_t worldmodel;
 static int cl_minlight = 1;	/* FIXME */
 static int d_lightstylevalue[256];
 static dlight_t cl_dlights[MAX_DLIGHTS];
@@ -2450,13 +2449,14 @@ Referenced by R_AliasDrawModel().
 		pfv[1] = &pfinalverts[ptri->vertindex[1]];
 		pfv[2] = &pfinalverts[ptri->vertindex[2]];
 
-		if (pfv[0]->flags & pfv[1]->flags & pfv[2]->
-		    flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
+		if (pfv[0]->flags & pfv[1]->
+		    flags & pfv[2]->flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
 			continue;	// completely clipped
 
 		if (!
-		    ((pfv[0]->flags | pfv[1]->flags | pfv[2]->
-		      flags) & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))) {
+		    ((pfv[0]->flags | pfv[1]->
+		      flags | pfv[2]->flags) & (ALIAS_XY_CLIP_MASK |
+						ALIAS_Z_CLIP))) {
 			// totally unclipped
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
@@ -3752,7 +3752,8 @@ LIGHT SAMPLING
 
 =============================================================================
 */
-static int RecursiveLightPoint(mnode_t * node, vec3_t start, vec3_t end)
+static int RecursiveLightPoint(mnode_t * node, vec3_t start, vec3_t end,
+			       model_t * worldmodel)
 /*
 Definition at line 175 of file r_light.c.
 
@@ -3789,7 +3790,8 @@ References mnode_s::children, cl, mnode_s::contents, d_lightstylevalue, mplane_s
 	side = front < 0;
 
 	if ((back < 0) == side)
-		return RecursiveLightPoint(node->children[side], start, end);
+		return RecursiveLightPoint(node->children[side], start, end,
+					   worldmodel);
 
 	frac = front / (front - back);
 	mid[0] = start[0] + (end[0] - start[0]) * frac;
@@ -3797,7 +3799,7 @@ References mnode_s::children, cl, mnode_s::contents, d_lightstylevalue, mplane_s
 	mid[2] = start[2] + (end[2] - start[2]) * frac;
 
 // go down front side   
-	r = RecursiveLightPoint(node->children[side], start, mid);
+	r = RecursiveLightPoint(node->children[side], start, mid, worldmodel);
 	if (r >= 0)
 		return r;	// hit something
 
@@ -3806,7 +3808,7 @@ References mnode_s::children, cl, mnode_s::contents, d_lightstylevalue, mplane_s
 
 // check for impact on this node
 
-	surf = worldmodel.surfaces + node->firstsurface;
+	surf = worldmodel->surfaces + node->firstsurface;
 	for (i = 0; i < node->numsurfaces; i++, surf++) {
 		if (surf->flags & SURF_DRAWTILED)
 			continue;	// no lightmaps
@@ -3853,10 +3855,10 @@ References mnode_s::children, cl, mnode_s::contents, d_lightstylevalue, mplane_s
 	}
 
 // go down back side
-	return RecursiveLightPoint(node->children[!side], mid, end);
+	return RecursiveLightPoint(node->children[!side], mid, end, worldmodel);
 }
 
-static int R_LightPoint(vec3_t p)
+static int R_LightPoint(vec3_t p, model_t * worldmodel)
 /*
 Definition at line 277 of file r_light.c.
 
@@ -3868,14 +3870,14 @@ Referenced by R_AliasSetupLighting().
 	vec3_t end;
 	int r;
 
-	if (!worldmodel.lightdata)
+	if (!worldmodel->lightdata)
 		return 255;
 
 	end[0] = p[0];
 	end[1] = p[1];
 	end[2] = p[2] - 8192;
 
-	r = RecursiveLightPoint(worldmodel.nodes, p, end);
+	r = RecursiveLightPoint(worldmodel->nodes, p, end, worldmodel);
 
 	if (r == -1)
 		r = 0;
@@ -3902,7 +3904,7 @@ Referenced by AddParticleTrail(), Cam_Track(), Cam_TryFlyby(), Classic_ParticleT
 
 static void R_AliasSetupLighting(entity_t * ent, int *r_ambientlight,
 				 float r_fullbrightSkins, struct r_vects *rve,
-				 float *r_shadelight)
+				 float *r_shadelight, model_t * worldmodel)
 /*
 Definition at line 537 of file r_alias.c.
 
@@ -3915,7 +3917,7 @@ Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
 	float add, fbskins;
 	vec3_t dist;
 
-	ambientlight = shadelight = R_LightPoint(ent->origin);
+	ambientlight = shadelight = R_LightPoint(ent->origin, worldmodel);
 
 	for (lnum = 0; lnum < MAX_DLIGHTS; lnum++) {
 		if (cl_dlights[lnum].die < r_refdef2.time
@@ -4033,7 +4035,7 @@ static void R_AliasDrawModel(entity_t * ent, pixel_t * d_viewbuffer,
 			     float r_viewmodelsize,
 			     float xscale, float yscale, float xcenter,
 			     float ycenter, float r_aliastransition, vec3_t vpn,
-			     vec3_t vright, vec3_t vup)
+			     vec3_t vright, vec3_t vup, model_t * worldmodel)
 /*
 Definition at line 629 of file r_alias.c.
 
@@ -4109,7 +4111,8 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	R_AliasSetUpTransform(ent, ent->trivial_accept, pmdl, modelorg,
 			      rs.aliasxscale, rs.aliasyscale, r_viewmodelsize,
 			      &rve);
-	R_AliasSetupLighting(ent, &r_ambientlight, 0.0, &rve, &r_shadelight);
+	R_AliasSetupLighting(ent, &r_ambientlight, 0.0, &rve, &r_shadelight,
+			     worldmodel);
 	R_AliasSetupFrame(ent, paliashdr, &rv);
 
 	if (!ent->colormap)
@@ -4185,6 +4188,7 @@ static void write_xbm(char *name, int width, int height, unsigned char *pixdata)
 static void loopfunc(void *data)
 {
 	vec3_t vpn, vright, vup;
+	model_t worldmodel;
 	struct control_data *cd = data;
 	entity_t *ent = cd->data;
 	pixel_t *d_viewbuffer = cd->view;
@@ -4192,6 +4196,7 @@ static void loopfunc(void *data)
 	memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
 	memset(d_viewbuffer, 0, HEIGHT * WIDTH);
 	AngleVectors(r_refdef.viewangles, vpn, vright, vup);
+	memset(&worldmodel, 0, sizeof(worldmodel));
 	R_AliasDrawModel(ent, d_viewbuffer, d_pzbuffer, ZWIDTH,	/* Z-Buffer width in pixels??? */
 			 WIDTH,	/* Screen width */
 			 cd->origin, 1,	/* r_lerpframes */
@@ -4199,7 +4204,7 @@ static void loopfunc(void *data)
 			 cd->aliasxscale,
 			 cd->aliasyscale, cd->aliasxcenter, cd->aliasycenter,
 			 0.0, cd->xscale, cd->yscale, cd->xcenter, cd->ycenter,
-			 cd->r_aliastransition, vpn, vright, vup);
+			 cd->r_aliastransition, vpn, vright, vup, &worldmodel);
 	updatescr(d_viewbuffer);
 //      ent->frame = ent->frame ^ 1;
 //      ent->oldframe = ent->frame;
