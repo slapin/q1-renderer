@@ -804,9 +804,7 @@ typedef struct {
 #endif
 } dlight_t;
 
-static aliashdr_t *paliashdr;
 static int r_anumverts;
-static mdl_t *pmdl;
 static finalvert_t *pfinalverts;
 static auxvert_t *pauxverts;
 static trivertx_t *r_oldapverts;
@@ -822,7 +820,7 @@ static float r_framelerp;
 static float ziscale;
 static float r_lerpdistance;
 static float aliastransform[3][4];
-static float r_avertexnormals[NUMVERTEXNORMALS][3] = {
+static const float r_avertexnormals[NUMVERTEXNORMALS][3] = {
 	{-0.525731, 0.000000, 0.850651},
 	{-0.442863, 0.238856, 0.864188},
 	{-0.295242, 0.000000, 0.955423},
@@ -1000,7 +998,7 @@ static vec3_t alias_forward, alias_right, alias_up;
 static float r_viewmodelsize;
 static vec3_t vup, vright, vpn /* Forward */ ;
 static refdef2_t r_refdef2;
-static aedge_t aedges[12] = {
+static const aedge_t aedges[12] = {
 	{0, 1}, {1, 2}, {2, 3}, {3, 0},
 	{4, 5}, {5, 6}, {6, 7}, {7, 4},
 	{0, 5}, {1, 4}, {2, 7}, {3, 6}
@@ -1010,9 +1008,7 @@ static float xscale, yscale;
 static float xcenter, ycenter;
 static float r_aliastransition, r_resfudge;
 static maliasskindesc_t *pskindesc;
-static int a_skinwidth;
 static model_t worldmodel;
-static int skinwidth;
 static int cl_minlight = 1;	/* FIXME */
 static int d_lightstylevalue[256];
 static dlight_t cl_dlights[MAX_DLIGHTS];
@@ -2472,7 +2468,8 @@ Referenced by R_AliasPreparePoints().
 static void R_AliasPreparePoints(entity_t * ent, pixel_t * d_viewbuffer,
 				 short *d_pzbuffer, byte * acolormap,
 				 struct r_state *r, unsigned int d_zwidth,
-				 int screenwidth, int skinwidth)
+				 int screenwidth, int skinwidth, mdl_t * pmdl,
+				 aliashdr_t * paliashdr)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2521,14 +2518,13 @@ Referenced by R_AliasDrawModel().
 		pfv[1] = &pfinalverts[ptri->vertindex[1]];
 		pfv[2] = &pfinalverts[ptri->vertindex[2]];
 
-		if (pfv[0]->flags & pfv[1]->
-		    flags & pfv[2]->flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
+		if (pfv[0]->flags & pfv[1]->flags & pfv[2]->
+		    flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
 			continue;	// completely clipped
 
 		if (!
-		    ((pfv[0]->flags | pfv[1]->
-		      flags | pfv[2]->flags) & (ALIAS_XY_CLIP_MASK |
-						ALIAS_Z_CLIP))) {
+		    ((pfv[0]->flags | pfv[1]->flags | pfv[2]->
+		      flags) & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))) {
 			// totally unclipped
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
@@ -2651,7 +2647,8 @@ Referenced by R_AliasPrepareUnclippedPoints().
 static void R_AliasPrepareUnclippedPoints(pixel_t * d_viewbuffer,
 					  short *d_pzbuffer, byte * acolormap,
 					  struct r_state *r, int d_zwidth,
-					  int screenwidth, int skinwidth)
+					  int screenwidth, int skinwidth,
+					  mdl_t * pmdl, aliashdr_t * paliashdr)
 /*
 Definition at line 466 of file r_alias.c.
 
@@ -3390,7 +3387,8 @@ static int dump_matrix(char *func, int l, char *prefix, char *m,
 
 #define DUMP_MATRIX(m) dump_matrix(__func__, __LINE__, "matrix", #m, m);
 
-static void R_AliasSetUpTransform(entity_t * ent, int trivial_accept)
+static void R_AliasSetUpTransform(entity_t * ent, int trivial_accept,
+				  mdl_t * pmdl)
 /*
 Definition at line 122 of file r_alias.c.
 
@@ -3473,7 +3471,7 @@ References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP,
 }
 
 static void R_AliasCheckBBoxFrame(int frame, trivertx_t ** mins,
-				  trivertx_t ** maxs)
+				  trivertx_t ** maxs, aliashdr_t * paliashdr)
 /*
 Definition at line 95 of file r_alias.c.
 
@@ -3515,7 +3513,8 @@ Referenced by R_AliasCheckBBox().
 	}
 }
 
-static qbool R_AliasCheckBBox(entity_t * ent)
+static qbool R_AliasCheckBBox(entity_t * ent, mdl_t * pmdl,
+			      aliashdr_t * paliashdr)
 /*
 Definition at line 122 of file r_alias.c.
 
@@ -3542,7 +3541,7 @@ Referenced by R_AliasDrawModel().
 	ent->trivial_accept = 0;
 
 	// expand, rotate, and translate points into worldspace
-	R_AliasSetUpTransform(ent, 0);
+	R_AliasSetUpTransform(ent, 0, pmdl);
 #if 0
 	for (j = 0; j < 3; j++)
 		for (k = 0; k < 4; k++)
@@ -3553,7 +3552,7 @@ Referenced by R_AliasDrawModel().
 #endif
 	// construct the base bounding box for this frame
 	if (r_framelerp == 1) {
-		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs);
+		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs, paliashdr);
 
 		// x worldspace coordinates
 		basepts[0][0] = basepts[1][0] = basepts[2][0] = basepts[3][0] =
@@ -3571,8 +3570,9 @@ Referenced by R_AliasDrawModel().
 		basepts[2][2] = basepts[3][2] = basepts[6][2] = basepts[7][2] =
 		    (float)maxs->v[2];
 	} else {
-		R_AliasCheckBBoxFrame(ent->oldframe, &oldmins, &oldmaxs);
-		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs);
+		R_AliasCheckBBoxFrame(ent->oldframe, &oldmins, &oldmaxs,
+				      paliashdr);
+		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs, paliashdr);
 
 		// x worldspace coordinates
 		basepts[0][0] = basepts[1][0] = basepts[2][0] = basepts[3][0] =
@@ -3714,7 +3714,8 @@ Referenced by R_AliasDrawModel().
 	return true;
 }
 
-static void R_AliasSetupSkin(entity_t * ent)
+static void R_AliasSetupSkin(entity_t * ent, mdl_t * pmdl,
+			     aliashdr_t * paliashdr)
 /*
 Definition at line 484 of file r_alias.c.
 
@@ -3727,6 +3728,7 @@ Referenced by R_AliasDrawModel().
 	int skinnum, i, numskins;
 	maliasskingroup_t *paliasskingroup;
 	float *pskinintervals, fullskininterval, skintargettime, skintime;
+	int a_skinwidth;
 
 	skinnum = ent->skinnum;
 	if (skinnum >= pmdl->numskins || skinnum < 0) {
@@ -4010,7 +4012,8 @@ Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
 	VectorSet(r_plightvec, -alias_forward[0], alias_right[0], -alias_up[0]);
 }
 
-static void R_AliasSetupFrameVerts(int frame, trivertx_t ** verts)
+static void R_AliasSetupFrameVerts(int frame, trivertx_t ** verts,
+				   aliashdr_t * paliashdr)
 {
 	int i, numframes;
 	maliasgroup_t *paliasgroup;
@@ -4046,10 +4049,10 @@ static void R_AliasSetupFrameVerts(int frame, trivertx_t ** verts)
 }
 
 //set r_oldapverts, r_apverts
-static void R_AliasSetupFrame(entity_t * ent)
+static void R_AliasSetupFrame(entity_t * ent, aliashdr_t * paliashdr)
 {
-	R_AliasSetupFrameVerts(ent->oldframe, &r_oldapverts);
-	R_AliasSetupFrameVerts(ent->frame, &r_apverts);
+	R_AliasSetupFrameVerts(ent->oldframe, &r_oldapverts, paliashdr);
+	R_AliasSetupFrameVerts(ent->frame, &r_apverts, paliashdr);
 }
 
 static void D_PolysetUpdateTables(int skinwidth)
@@ -4074,6 +4077,9 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 */
 {
 	struct r_state r;
+	mdl_t *pmdl;
+	aliashdr_t *paliashdr;
+
 	finalvert_t finalverts[MAXALIASVERTS +
 			       ((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
 	auxvert_t auxverts[MAXALIASVERTS];
@@ -4103,7 +4109,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 		r_framelerp = min(ent->framelerp, 1);
 
 	if (!(ent->renderfx & RF_WEAPONMODEL)) {
-		if (!R_AliasCheckBBox(ent))
+		if (!R_AliasCheckBBox(ent, pmdl, paliashdr))
 			return;
 	}
 	// cache align
@@ -4112,10 +4118,10 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 			     ~(CACHE_SIZE - 1));
 	pauxverts = &auxverts[0];
 
-	R_AliasSetupSkin(ent);
-	R_AliasSetUpTransform(ent, ent->trivial_accept);
+	R_AliasSetupSkin(ent, pmdl, paliashdr);
+	R_AliasSetUpTransform(ent, ent->trivial_accept, pmdl);
 	R_AliasSetupLighting(ent);
-	R_AliasSetupFrame(ent);
+	R_AliasSetupFrame(ent, paliashdr);
 
 	if (!ent->colormap)
 		Sys_Error("R_AliasDrawModel: !ent->colormap");
@@ -4139,11 +4145,13 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 		R_AliasPrepareUnclippedPoints(d_viewbuffer, d_pzbuffer,
 					      ent->colormap, &r, d_zwidth,
 					      screenwidth,
-					      r_affinetridesc.skinwidth);
+					      r_affinetridesc.skinwidth, pmdl,
+					      paliashdr);
 	else
 		R_AliasPreparePoints(ent, d_viewbuffer, d_pzbuffer,
 				     ent->colormap, &r, d_zwidth, screenwidth,
-				     r_affinetridesc.skinwidth);
+				     r_affinetridesc.skinwidth, pmdl,
+				     paliashdr);
 }
 
 static void write_xbm(char *name, int width, int height, unsigned char *pixdata)
