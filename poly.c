@@ -1014,7 +1014,6 @@ static maliasskindesc_t *pskindesc;
 static int a_skinwidth;
 static model_t worldmodel;
 static int skinwidth;
-static byte *skinstart;
 static int cl_minlight = 1; /* FIXME */
 static int d_lightstylevalue[256];
 static dlight_t cl_dlights[MAX_DLIGHTS];
@@ -1539,7 +1538,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 {
 	double dm, dn;
 	int tm, tn;
-	adivtab_t *ptemp;
+	const adivtab_t *ptemp;
 
 // TODO: implement x86 version
 
@@ -1563,7 +1562,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 	}
 }
 
-static void D_RasterizeAliasPolySmooth(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, unsigned int d_zwidth, int screenwidth, int d_xdenom)
+static void D_RasterizeAliasPolySmooth(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, unsigned int d_zwidth, int screenwidth, int d_xdenom, int skinwidth)
 /*
 Definition at line 742 of file d_polyse.c.
 
@@ -1797,7 +1796,7 @@ Referenced by D_DrawNonSubdiv().
 	}
 }
 
-static void D_DrawNonSubdiv(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth, int *d_xdenom)
+static void D_DrawNonSubdiv(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth, int *d_xdenom, int skinwidth)
 /*
 Definition at line 266 of file d_polyse.c.
 
@@ -1867,11 +1866,11 @@ Referenced by D_PolysetDraw().
 #if 0
        		printf("%s:%d running D_RasterizeAliasPolySmooth()\n", __func__, __LINE__);
 #endif
-		D_RasterizeAliasPolySmooth(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, *d_xdenom);
+		D_RasterizeAliasPolySmooth(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, *d_xdenom, skinwidth);
 	}
 }
 
-static void D_PolysetDraw(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth)
+static void D_PolysetDraw(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth, int skinwidth)
 /*
 Definition at line 132 of file d_polyse.c.
 
@@ -1897,7 +1896,7 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 #if 0
        		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_DrawNonSubdiv(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, &d_xdenom);
+		D_DrawNonSubdiv(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, &d_xdenom, skinwidth);
 	}
 }
 
@@ -2219,7 +2218,7 @@ Referenced by R_AliasClipTriangle().
 	}
 }
 
-static void R_AliasClipTriangle(mtriangle_t * ptri, pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth)
+static void R_AliasClipTriangle(mtriangle_t * ptri, pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth, int skinwidth)
 /*
 Definition at line 245 of file r_aclip.c.
 
@@ -2387,11 +2386,11 @@ Referenced by R_AliasPreparePoints().
 	for (i = 1; i < k - 1; i++) {
 		mtri.vertindex[1] = i;
 		mtri.vertindex[2] = i + 1;
-		D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
+		D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, skinwidth);
 	}
 }
 
-static void R_AliasPreparePoints(entity_t *ent, pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, unsigned int d_zwidth, int screenwidth)
+static void R_AliasPreparePoints(entity_t *ent, pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, unsigned int d_zwidth, int screenwidth, int skinwidth)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2450,10 +2449,10 @@ Referenced by R_AliasDrawModel().
 			// totally unclipped
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
-			D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
+			D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, skinwidth);
 		} else {
 			// partially clipped
-			R_AliasClipTriangle(ptri, d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
+			R_AliasClipTriangle(ptri, d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, skinwidth);
 		}
 	}
 }
@@ -2561,7 +2560,7 @@ Referenced by R_AliasPrepareUnclippedPoints().
 	}
 }
 
-static void R_AliasPrepareUnclippedPoints(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth)
+static void R_AliasPrepareUnclippedPoints(pixel_t *d_viewbuffer, short *d_pzbuffer, byte *acolormap, struct r_state *r, int d_zwidth, int screenwidth, int skinwidth)
 /*
 Definition at line 466 of file r_alias.c.
 
@@ -2585,7 +2584,7 @@ Referenced by R_AliasDrawModel().
 	    (mtriangle_t *) ((byte *) paliashdr + paliashdr->triangles);
 	r_affinetridesc.numtriangles = pmdl->numtris;
 
-	D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth);
+	D_PolysetDraw(d_viewbuffer, d_pzbuffer, acolormap, r, d_zwidth, screenwidth, skinwidth);
 }
 
 #if 0
@@ -3949,19 +3948,14 @@ static void R_AliasSetupFrame(entity_t * ent)
 	R_AliasSetupFrameVerts(ent->frame, &r_apverts);
 }
 
-static void D_PolysetUpdateTables(void)
+static void D_PolysetUpdateTables(int skinwidth)
 {
 	int i;
 	byte *s;
 
-	if (r_affinetridesc.skinwidth != skinwidth ||
-	    r_affinetridesc.pskin != skinstart) {
-		skinwidth = r_affinetridesc.skinwidth;
-		skinstart = r_affinetridesc.pskin;
-		s = skinstart;
-		for (i = 0; i < MAX_LBM_HEIGHT; i++, s += skinwidth)
-			skintable[i] = s;
-	}
+	s = r_affinetridesc.pskin;
+	for (i = 0; i < MAX_LBM_HEIGHT; i++, s += skinwidth)
+		skintable[i] = s;
 }
 
 static void R_AliasDrawModel(entity_t * ent, pixel_t *d_viewbuffer, short *d_pzbuffer, unsigned int d_zwidth, int screenwidth)
@@ -4024,7 +4018,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	r_affinetridesc.drawtype = (ent->trivial_accept == 3);
 
 	if (r_affinetridesc.drawtype) {
-		D_PolysetUpdateTables();	// FIXME: precalc...
+		D_PolysetUpdateTables(r_affinetridesc.skinwidth);	// FIXME: precalc...
 	} else {
 #ifdef id386
 		D_Aff8Patch(ent->colormap);
@@ -4037,9 +4031,9 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	ziscale = (float)0x8000 *(float)0x10000 *3.0;
 
 	if (ent->trivial_accept)
-		R_AliasPrepareUnclippedPoints(d_viewbuffer, d_pzbuffer, ent->colormap, &r, d_zwidth, screenwidth);
+		R_AliasPrepareUnclippedPoints(d_viewbuffer, d_pzbuffer, ent->colormap, &r, d_zwidth, screenwidth, r_affinetridesc.skinwidth);
 	else
-		R_AliasPreparePoints(ent, d_viewbuffer, d_pzbuffer, ent->colormap, &r, d_zwidth, screenwidth);
+		R_AliasPreparePoints(ent, d_viewbuffer, d_pzbuffer, ent->colormap, &r, d_zwidth, screenwidth, r_affinetridesc.skinwidth);
 }
 
 static void write_xbm(char *name, int width,
