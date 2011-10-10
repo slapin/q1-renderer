@@ -805,7 +805,6 @@ typedef struct {
 } dlight_t;
 
 static finalvert_t *pfinalverts;
-static auxvert_t *pauxverts;
 static trivertx_t *r_oldapverts;
 static trivertx_t *r_apverts;
 static refdef_t r_refdef;
@@ -992,7 +991,6 @@ static finalvert_t fv[2][8];
 static auxvert_t av[8];
 static float r_nearclip = 1.0;
 static char loadname[32];
-static model_t *loadmodel;
 static vec3_t alias_forward, alias_right, alias_up;
 static float r_viewmodelsize;
 static vec3_t vup, vright, vpn /* Forward */ ;
@@ -2267,7 +2265,8 @@ Referenced by R_AliasClipTriangle().
 static void R_AliasClipTriangle(mtriangle_t * ptri, pixel_t * d_viewbuffer,
 				short *d_pzbuffer, byte * acolormap,
 				struct r_state *r, int d_zwidth,
-				int screenwidth, int skinwidth)
+				int screenwidth, int skinwidth,
+				auxvert_t * pauxverts)
 /*
 Definition at line 245 of file r_aclip.c.
 
@@ -2299,20 +2298,6 @@ Referenced by R_AliasPreparePoints().
 
 // clip
 	clipflags = fv[0][0].flags | fv[0][1].flags | fv[0][2].flags;
-#if 0
-	for (i = 0; i < 3; i++) {
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[0]);
-		printf("%s:%d A fv[0][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[1]);
-	}
-	for (i = 0; i < 3; i++) {
-		printf("%s:%d B fv[1][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[0]);
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[1]);
-	}
-#endif
 
 	if (clipflags & ALIAS_Z_CLIP) {
 		for (i = 0; i < 3; i++)
@@ -2328,20 +2313,6 @@ Referenced by R_AliasPreparePoints().
 		pingpong = 0;
 		k = 3;
 	}
-#if 0
-	for (i = 0; i < k; i++) {
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[0]);
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[1]);
-	}
-	for (i = 0; i < k; i++) {
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[0]);
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[1]);
-	}
-#endif
 
 	if (clipflags & ALIAS_LEFT_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
@@ -2351,20 +2322,6 @@ Referenced by R_AliasPreparePoints().
 
 		pingpong ^= 1;
 	}
-#if 0
-	for (i = 0; i < k; i++) {
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[0]);
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[1]);
-	}
-	for (i = 0; i < k; i++) {
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[0]);
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[1]);
-	}
-#endif
 
 	if (clipflags & ALIAS_RIGHT_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
@@ -2374,20 +2331,6 @@ Referenced by R_AliasPreparePoints().
 
 		pingpong ^= 1;
 	}
-#if 0
-	for (i = 0; i < k; i++) {
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[0]);
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[1]);
-	}
-	for (i = 0; i < k; i++) {
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[0]);
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[1]);
-	}
-#endif
 
 	if (clipflags & ALIAS_BOTTOM_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
@@ -2397,20 +2340,6 @@ Referenced by R_AliasPreparePoints().
 
 		pingpong ^= 1;
 	}
-#if 0
-	for (i = 0; i < k; i++) {
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[0]);
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[1]);
-	}
-	for (i = 0; i < k; i++) {
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[0]);
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[1]);
-	}
-#endif
 
 	if (clipflags & ALIAS_TOP_CLIP) {
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
@@ -2420,20 +2349,6 @@ Referenced by R_AliasPreparePoints().
 
 		pingpong ^= 1;
 	}
-#if 0
-	for (i = 0; i < k; i++) {
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[0]);
-		printf("%s:%d A fv[0][i].v[0] = %d\n", __func__, __LINE__,
-		       fv[0][i].v[1]);
-	}
-	for (i = 0; i < k; i++) {
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[0]);
-		printf("%s:%d B fv[1][i].v[1] = %d\n", __func__, __LINE__,
-		       fv[1][i].v[1]);
-	}
-#endif
 
 	for (i = 0; i < k; i++) {
 		if (fv[pingpong][i].v[0] < r_refdef.aliasvrect.x)
@@ -2468,7 +2383,7 @@ static void R_AliasPreparePoints(entity_t * ent, pixel_t * d_viewbuffer,
 				 short *d_pzbuffer, byte * acolormap,
 				 struct r_state *r, unsigned int d_zwidth,
 				 int screenwidth, int skinwidth, mdl_t * pmdl,
-				 aliashdr_t * paliashdr)
+				 aliashdr_t * paliashdr, auxvert_t * pauxverts)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2518,14 +2433,13 @@ Referenced by R_AliasDrawModel().
 		pfv[1] = &pfinalverts[ptri->vertindex[1]];
 		pfv[2] = &pfinalverts[ptri->vertindex[2]];
 
-		if (pfv[0]->flags & pfv[1]->
-		    flags & pfv[2]->flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
+		if (pfv[0]->flags & pfv[1]->flags & pfv[2]->
+		    flags & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))
 			continue;	// completely clipped
 
 		if (!
-		    ((pfv[0]->flags | pfv[1]->
-		      flags | pfv[2]->flags) & (ALIAS_XY_CLIP_MASK |
-						ALIAS_Z_CLIP))) {
+		    ((pfv[0]->flags | pfv[1]->flags | pfv[2]->
+		      flags) & (ALIAS_XY_CLIP_MASK | ALIAS_Z_CLIP))) {
 			// totally unclipped
 			r_affinetridesc.pfinalverts = pfinalverts;
 			r_affinetridesc.ptriangles = ptri;
@@ -2535,7 +2449,7 @@ Referenced by R_AliasDrawModel().
 			// partially clipped
 			R_AliasClipTriangle(ptri, d_viewbuffer, d_pzbuffer,
 					    acolormap, r, d_zwidth, screenwidth,
-					    skinwidth);
+					    skinwidth, pauxverts);
 		}
 	}
 }
@@ -3216,7 +3130,6 @@ No doxygen info for this function
 	}
 	// allocate a new model
 	COM_FileBase(mod->name, loadname);
-	loadmodel = mod;
 	/* FMod_CheckModel(mod->name, buf, filesize); */
 
 	// call the apropriate loader
@@ -4083,6 +3996,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	struct r_state r;
 	mdl_t *pmdl;
 	aliashdr_t *paliashdr;
+	auxvert_t *pauxverts;
 
 	finalvert_t finalverts[MAXALIASVERTS +
 			       ((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
@@ -4155,7 +4069,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 		R_AliasPreparePoints(ent, d_viewbuffer, d_pzbuffer,
 				     ent->colormap, &r, d_zwidth, screenwidth,
 				     r_affinetridesc.skinwidth, pmdl,
-				     paliashdr);
+				     paliashdr, pauxverts);
 }
 
 static void write_xbm(char *name, int width, int height, unsigned char *pixdata)
