@@ -23,6 +23,9 @@ struct control_data {
 	float aliasyscale;
 	float aliasxcenter;
 	float aliasycenter;
+	float xscale, yscale;
+	float xcenter, ycenter;
+	float r_aliastransition;
 };
 #define WIDTH	640
 #define HEIGHT	480
