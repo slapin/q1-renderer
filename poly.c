@@ -990,7 +990,6 @@ static const aedge_t aedges[12] = {
 	{0, 5}, {1, 4}, {2, 7}, {3, 6}
 };
 
-static float r_resfudge;
 static int cl_minlight = 1;	/* FIXME */
 static int d_lightstylevalue[256];
 static dlight_t cl_dlights[MAX_DLIGHTS];
@@ -3467,7 +3466,8 @@ static qbool R_AliasCheckBBox(entity_t * ent, mdl_t * pmdl,
 			      float r_framelerp, struct r_scale *rs,
 			      float r_viewmodelsize, float xscale, float yscale,
 			      float xcenter, float ycenter,
-			      float r_aliastransition, struct r_vects *rve)
+			      float r_aliastransition, struct r_vects *rve,
+			      float r_resfudge)
 /*
 Definition at line 122 of file r_alias.c.
 
@@ -4026,16 +4026,52 @@ static void D_PolysetUpdateTables(int skinwidth)
 		skintable[i] = s;
 }
 
-static void R_AliasDrawModel(entity_t * ent, pixel_t * d_viewbuffer,
-			     short *d_pzbuffer, unsigned int d_zwidth,
-			     int screenwidth, vec3_t r_origin,
+void set_rs(struct r_scale *rs,
+	float aliasxscale,
+	float aliasyscale,
+	float aliasxcenter,
+	float aliasycenter,
+	float nearclip)
+{
+	rs->aliasxscale = aliasxscale;
+	rs->aliasyscale = aliasyscale;
+	rs->aliasxcenter = aliasxcenter;
+	rs->aliasycenter = aliasycenter;
+	rs->r_nearclip = nearclip;
+}
+
+void set_rve(struct r_vects *rve, vec3_t angles)
+{
+	AngleVectors(angles, rve->vpn, rve->vright, rve->vup);
+}
+
+struct r_view {
+	pixel_t *viewbuffer;
+	short *zbuffer;
+	unsigned int zwidth;
+	int screenwidth;
+};
+
+void set_view(struct r_view *view, pixel_t *viewbuffer, short *zbuffer,
+		unsigned int zwidth,
+		int screenwidth)
+{
+	view->viewbuffer = viewbuffer;
+	view->zbuffer = zbuffer;
+	view->zwidth = zwidth;
+	view->screenwidth = screenwidth;
+}
+
+
+void R_AliasDrawModel(entity_t * ent, const struct r_view *view,
+			     vec3_t r_origin,
 			     int r_lerpframes, float r_lerpdistance,
-			     float aliasxscale, float aliasyscale,
-			     float aliasxcenter, float aliasycenter,
+			     struct r_scale *rs,
 			     float r_viewmodelsize,
 			     float xscale, float yscale, float xcenter,
-			     float ycenter, float r_aliastransition, vec3_t vpn,
-			     vec3_t vright, vec3_t vup, model_t * worldmodel)
+			     float ycenter, float r_aliastransition,
+			     model_t * worldmodel, struct r_vects *rve,
+			     float r_resfudge)
 /*
 Definition at line 629 of file r_alias.c.
 
@@ -4055,17 +4091,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	float r_framelerp;
 	float ziscale;
 	int r_ambientlight;
-	struct r_scale rs;
-	struct r_vects rve;
 	float r_shadelight;
-	rs.aliasxscale = aliasxscale;
-	rs.aliasyscale = aliasyscale;
-	rs.aliasxcenter = aliasxcenter;
-	rs.aliasycenter = aliasycenter;
-	rs.r_nearclip = 1.0;
-	memcpy(rve.vpn, vpn, sizeof(rve.vpn));
-	memcpy(rve.vright, vright, sizeof(rve.vright));
-	memcpy(rve.vup, vup, sizeof(rve.vup));
 
 	finalvert_t finalverts[MAXALIASVERTS +
 			       ((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
@@ -4074,7 +4100,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	VectorSubtract(r_origin, ent->origin, modelorg);
 
 	pmodel = ent->model;
-	paliashdr = Mod_Extradata(pmodel);
+	paliashdr = pmodel->cache.data;
 	if (!paliashdr)
 		return;
 	pmdl = (mdl_t *) ((byte *) paliashdr + paliashdr->model);
@@ -4096,9 +4122,9 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
 	if (!(ent->renderfx & RF_WEAPONMODEL)) {
 		if (!R_AliasCheckBBox(ent, pmdl, paliashdr, modelorg,
-				      r_framelerp, &rs, r_viewmodelsize, xscale,
+				      r_framelerp, rs, r_viewmodelsize, xscale,
 				      yscale, xcenter, ycenter,
-				      r_aliastransition, &rve))
+				      r_aliastransition, rve, r_resfudge))
 			return;
 	}
 	// cache align
@@ -4109,9 +4135,9 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
 	R_AliasSetupSkin(ent, pmdl, paliashdr);
 	R_AliasSetUpTransform(ent, ent->trivial_accept, pmdl, modelorg,
-			      rs.aliasxscale, rs.aliasyscale, r_viewmodelsize,
-			      &rve);
-	R_AliasSetupLighting(ent, &r_ambientlight, 0.0, &rve, &r_shadelight,
+			      rs->aliasxscale, rs->aliasyscale, r_viewmodelsize,
+			      rve);
+	R_AliasSetupLighting(ent, &r_ambientlight, 0.0, rve, &r_shadelight,
 			     worldmodel);
 	R_AliasSetupFrame(ent, paliashdr, &rv);
 
@@ -4130,25 +4156,46 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	if (!(ent->renderfx & RF_WEAPONMODEL))
 		ziscale = (float)0x8000 *(float)0x10000;
 	else
-	ziscale = (float)0x8000 *(float)0x10000 *3.0;
+		ziscale = (float)0x8000 *(float)0x10000 *3.0;
 
-	rs.ziscale = ziscale;
+	rs->ziscale = ziscale;
 
 	if (ent->trivial_accept)
-		R_AliasPrepareUnclippedPoints(d_viewbuffer, d_pzbuffer,
-					      ent->colormap, &r, d_zwidth,
-					      screenwidth,
+		R_AliasPrepareUnclippedPoints(view->viewbuffer, view->zbuffer,
+					      ent->colormap, &r, view->zwidth,
+					      view->screenwidth,
 					      r_affinetridesc.skinwidth, pmdl,
 					      paliashdr, &rv, pfinalverts,
-					      r_framelerp, r_ambientlight, &rs,
-					      &rve, r_shadelight);
+					      r_framelerp, r_ambientlight, rs,
+					      rve, r_shadelight);
 	else
-		R_AliasPreparePoints(ent, d_viewbuffer, d_pzbuffer,
-				     ent->colormap, &r, d_zwidth, screenwidth,
+		R_AliasPreparePoints(ent, view->viewbuffer, view->zbuffer,
+				     ent->colormap, &r, view->zwidth,
+				     view->screenwidth,
 				     r_affinetridesc.skinwidth, pmdl,
 				     paliashdr, pauxverts, &rv, pfinalverts,
 				     r_framelerp, ziscale, r_lerpdistance,
-				     r_ambientlight, &rs, &rve, r_shadelight);
+				     r_ambientlight, rs, rve, r_shadelight);
+}
+
+model_t *load_model(int type, model_t *model, char *filename)
+{
+	int fd, l;
+	struct stat buf;
+	unsigned char *data;
+	int ret = stat(filename, &buf);
+	if (ret < 0)
+		return NULL;
+	data = malloc(buf.st_size);
+	fd = open(filename, O_RDONLY);
+	l = read(fd, data, buf.st_size);
+	if (l != buf.st_size) {
+		free(data);
+		return NULL;
+	}
+	close(fd);
+	strcpy(model->name, filename);
+	Mod_LoadAliasModel(model, data, buf.st_size);
 }
 
 static void write_xbm(char *name, int width, int height, unsigned char *pixdata)
@@ -4187,24 +4234,31 @@ static void write_xbm(char *name, int width, int height, unsigned char *pixdata)
 
 static void loopfunc(void *data)
 {
-	vec3_t vpn, vright, vup;
 	model_t worldmodel;
+	struct r_scale rs;
+	struct r_vects rve;
+	struct r_view view;
 	struct control_data *cd = data;
 	entity_t *ent = cd->data;
 	pixel_t *d_viewbuffer = cd->view;
 	short *d_pzbuffer = cd->zbuffer;
 	memset(d_pzbuffer, 0, HEIGHT * WIDTH * 2);
 	memset(d_viewbuffer, 0, HEIGHT * WIDTH);
-	AngleVectors(r_refdef.viewangles, vpn, vright, vup);
 	memset(&worldmodel, 0, sizeof(worldmodel));
-	R_AliasDrawModel(ent, d_viewbuffer, d_pzbuffer, ZWIDTH,	/* Z-Buffer width in pixels??? */
-			 WIDTH,	/* Screen width */
+	set_rve(&rve, r_refdef.viewangles);
+	set_rs(&rs, cd->aliasxscale,
+		cd->aliasyscale,
+		cd->aliasxcenter,
+		cd->aliasycenter,
+		1.0);
+	set_view(&view, d_viewbuffer, d_pzbuffer, ZWIDTH, WIDTH);
+	R_AliasDrawModel(ent, &view,
 			 cd->origin, 1,	/* r_lerpframes */
 			 1.0,	/* r_lerpdistance */
-			 cd->aliasxscale,
-			 cd->aliasyscale, cd->aliasxcenter, cd->aliasycenter,
+			 &rs,
 			 0.0, cd->xscale, cd->yscale, cd->xcenter, cd->ycenter,
-			 cd->r_aliastransition, vpn, vright, vup, &worldmodel);
+			 cd->r_aliastransition, &worldmodel, &rve,
+			 cd->r_resfudge);
 	updatescr(d_viewbuffer);
 //      ent->frame = ent->frame ^ 1;
 //      ent->oldframe = ent->frame;
@@ -4327,13 +4381,15 @@ int main(int argc, char *argv[])
 #define ALIASTRANSBASE	200
 #define ALIASTRANSADJ	100
 	cd->r_aliastransition = ALIASTRANSBASE * res_scale;
-	r_resfudge = ALIASTRANSADJ * res_scale;
+	cd->r_resfudge = ALIASTRANSADJ * res_scale;
 	r_origin[0] = 0.0;
 	r_origin[1] = 30.0;
 	r_origin[2] = -30.0;
 	r_refdef.viewangles[YAW] = 0.0;
 	r_refdef.viewangles[PITCH] = 0.0;
 	r_refdef.viewangles[ROLL] = 0.0;
+
+	load_model(0, ent.model, "test");
 
 	do_key_loop(loopfunc, cd);
 	pb = d_viewbuffer;
