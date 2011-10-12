@@ -4062,14 +4062,27 @@ void set_view(struct r_view *view, pixel_t *viewbuffer, short *zbuffer,
 	view->screenwidth = screenwidth;
 }
 
+struct main_scale {
+	float xscale, yscale;
+	float xcenter, ycenter;
+};
+
+void set_main_scale(struct main_scale *ms, float xscale,
+		float yscale, float xcenter, float ycenter)
+{
+	ms->xscale = xscale;
+	ms->yscale = yscale;
+	ms->xcenter = xcenter;
+	ms->ycenter = ycenter;
+}
 
 void R_AliasDrawModel(entity_t * ent, const struct r_view *view,
 			     vec3_t r_origin,
 			     int r_lerpframes, float r_lerpdistance,
 			     struct r_scale *rs,
 			     float r_viewmodelsize,
-			     float xscale, float yscale, float xcenter,
-			     float ycenter, float r_aliastransition,
+			     struct main_scale *ms,
+			     float r_aliastransition,
 			     model_t * worldmodel, struct r_vects *rve,
 			     float r_resfudge)
 /*
@@ -4122,8 +4135,8 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
 	if (!(ent->renderfx & RF_WEAPONMODEL)) {
 		if (!R_AliasCheckBBox(ent, pmdl, paliashdr, modelorg,
-				      r_framelerp, rs, r_viewmodelsize, xscale,
-				      yscale, xcenter, ycenter,
+				      r_framelerp, rs, r_viewmodelsize, ms->xscale,
+				      ms->yscale, ms->xcenter, ms->ycenter,
 				      r_aliastransition, rve, r_resfudge))
 			return;
 	}
@@ -4238,6 +4251,7 @@ static void loopfunc(void *data)
 	struct r_scale rs;
 	struct r_vects rve;
 	struct r_view view;
+	struct main_scale ms;
 	struct control_data *cd = data;
 	entity_t *ent = cd->data;
 	pixel_t *d_viewbuffer = cd->view;
@@ -4251,12 +4265,13 @@ static void loopfunc(void *data)
 		cd->aliasxcenter,
 		cd->aliasycenter,
 		1.0);
+	set_main_scale(&ms, cd->xscale, cd->yscale, cd->xcenter, cd->ycenter);
 	set_view(&view, d_viewbuffer, d_pzbuffer, ZWIDTH, WIDTH);
 	R_AliasDrawModel(ent, &view,
 			 cd->origin, 1,	/* r_lerpframes */
 			 1.0,	/* r_lerpdistance */
 			 &rs,
-			 0.0, cd->xscale, cd->yscale, cd->xcenter, cd->ycenter,
+			 0.0, &ms, 
 			 cd->r_aliastransition, &worldmodel, &rve,
 			 cd->r_resfudge);
 	updatescr(d_viewbuffer);
