@@ -295,9 +295,9 @@ int initgfx(void)
 	show_mouse(NULL);
 #endif
 	for (i = 0; i < 256; i++) {
-		pal[i].r = paldata[i][0] >> 0;
-		pal[i].g = paldata[i][1] >> 0;
-		pal[i].b = paldata[i][2] >> 0;
+		pal[i].r = paldata[i][0] >> 2;
+		pal[i].g = paldata[i][1] >> 2;
+		pal[i].b = paldata[i][2] >> 2;
 	}
 	set_palette(pal);
 	localscreen = create_bitmap(WIDTH, HEIGHT);

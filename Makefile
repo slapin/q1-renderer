@@ -1,12 +1,17 @@
 CFLAGS = -g -ggdb2 -O0 -Wall -Wuninitialized
+SRCM_NORMAL = main.c
+SRCM_NULL = main_null.c
+SRCS = poly.c triangle.c
+OBJS_NORMAL = $(SRCM_NORMAL:.c=.o) $(SRCS:.c=.o)
+OBJS_NULL = $(SRCM_NULL:.c=.o) $(SRCS:.c=.o)
 all: poly poly-null
-poly: poly.o main.o
-	$(CC) $(CFLAGS) -o poly main.o poly.o -lpng -lm `allegro-config --libs`
+poly: $(OBJS_NORMAL)
+	$(CC) $(CFLAGS) -o poly $(OBJS_NORMAL) -lpng -lm `allegro-config --libs`
 
-poly-null: poly.o main_null.o
-	$(CC) $(CFLAGS) -o poly-null main_null.o poly.o -lpng -lm
+poly-null: $(OBJS_NULL)
+	$(CC) $(CFLAGS) -o poly-null $(OBJS_NULL) -lpng -lm
 clean:
-	rm -f poly.o main.o poly poly_null.o
+	rm -f $(OBJS_NORMAL) $(OBJS_NULL)
 
 .PHONY: all clean
 
