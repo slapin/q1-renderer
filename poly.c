@@ -52,14 +52,6 @@ typedef struct {
 	int skin;
 } maliasskindesc_t;
 typedef struct {
-	void *pskin;
-	maliasskindesc_t *pskindesc;
-	int skinwidth;
-	int skinheight;
-	mtriangle_t *ptriangles;
-	finalvert_t *pfinalverts;
-	int numtriangles;
-	int drawtype;
 	int seamfixupX16;
 } affinetridesc_t;
 typedef byte pixel_t;
@@ -88,10 +80,6 @@ typedef struct {
 typedef struct {
 	float fv[3];		// viewspace x, y
 } auxvert_t;
-
-/* Input params */
-static affinetridesc_t r_affinetridesc;
-/* End of input params */
 
 static int r_p0[6], r_p1[6], r_p2[6];
 
@@ -1001,6 +989,8 @@ struct r_finalmesh {
 	mtriangle_t *triangles;
 	finalvert_t *finalverts;
 	int ntriangles;
+	void *pskin;
+	int seamfixupX16;
 };
 
 static void D_DrawSubdiv(pixel_t * d_viewbuffer, byte * acolormap, short * const *zspantable, byte **skintable, int *d_scantable, struct r_finalmesh *fm)
@@ -1039,12 +1029,6 @@ Referenced by D_PolysetDraw().
 			index0 = pfv + ptri[i].vertindex[0];
 			index1 = pfv + ptri[i].vertindex[1];
 			index2 = pfv + ptri[i].vertindex[2];
-#if 0
-			printf("%s:%d pfv: %d, %d, %d, %d, %d, %d\n", __func__,
-			       __LINE__, index0->v[0], index0->v[1],
-			       index1->v[0], index1->v[1], index2->v[0],
-			       index2->v[1]);
-#endif
 
 			if (((index0->v[1] - index1->v[1]) *
 			     (index0->v[0] - index2->v[0]) -
@@ -1056,9 +1040,6 @@ Referenced by D_PolysetDraw().
 			d_pcolormap = &acolormap[index0->v[4] & 0xFF00];
 
 			if (ptri[i].facesfront) {
-#if 0
-				printf("%s:%d\n", __func__, __LINE__);
-#endif
 				D_PolysetRecursiveTriangle(index0->v, index1->v,
 							   index2->v,
 							   d_pcolormap,
@@ -1073,13 +1054,13 @@ Referenced by D_PolysetDraw().
 
 				if (index0->flags & ALIAS_ONSEAM)
 					index0->v[2] +=
-					    r_affinetridesc.seamfixupX16;
+					    fm->seamfixupX16;
 				if (index1->flags & ALIAS_ONSEAM)
 					index1->v[2] +=
-					    r_affinetridesc.seamfixupX16;
+					    fm->seamfixupX16;
 				if (index2->flags & ALIAS_ONSEAM)
 					index2->v[2] +=
-					    r_affinetridesc.seamfixupX16;
+					    fm->seamfixupX16;
 
 				D_PolysetRecursiveTriangle(index0->v, index1->v,
 							   index2->v,
@@ -1330,7 +1311,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 
 static void D_PolysetScanLeftEdge(int height, byte * d_pdest, byte * d_ptex,
 				  int d_ptexbasestep, int d_ptexextrastep,
-				  struct r_state *r)
+				  struct r_state *r, int skinwidth)
 /*
 Definition at line 443 of file d_polyse.c.
 
@@ -1371,7 +1352,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 			r->d_sfrac &= 0xFFFF;
 			r->d_tfrac += r->d_tfracextrastep;
 			if (r->d_tfrac & 0x10000) {
-				d_ptex += r_affinetridesc.skinwidth;
+				d_ptex += skinwidth;
 				r->d_tfrac &= 0xFFFF;
 			}
 			r->d_light += r->d_lightextrastep;
@@ -1387,7 +1368,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 			r->d_sfrac &= 0xFFFF;
 			r->d_tfrac += r->d_tfracbasestep;
 			if (r->d_tfrac & 0x10000) {
-				d_ptex += r_affinetridesc.skinwidth;
+				d_ptex += skinwidth;
 				r->d_tfrac &= 0xFFFF;
 			}
 			r->d_light += r->d_lightbasestep;
@@ -1472,7 +1453,7 @@ Referenced by D_RasterizeAliasPolySmooth().
 static void D_RasterizeAliasPolySmooth(pixel_t * d_viewbuffer,
 				       short *d_pzbuffer, byte * acolormap,
 				       struct r_state *r, unsigned int d_zwidth,
-				       int screenwidth, int d_xdenom,
+				       int screenwidth, int d_xdenom, void *pskin,
 				       int skinwidth)
 /*
 Definition at line 742 of file d_polyse.c.
@@ -1504,7 +1485,7 @@ Referenced by D_DrawNonSubdiv().
 // set the s, t, and light gradients, which are consistent across the triangle
 // because being a triangle, things are affine
 //
-	D_PolysetCalcGradients(r_affinetridesc.skinwidth, r, d_xdenom);
+	D_PolysetCalcGradients(skinwidth, r, d_xdenom);
 
 #if 0
 	printf("%s:%d: plot left height = %d right height = %d\n", __func__,
@@ -1525,8 +1506,8 @@ Referenced by D_DrawNonSubdiv().
 	ystart = plefttop[1];
 	r->d_aspancount = plefttop[0] - prighttop[0];
 
-	d_ptex = (byte *) r_affinetridesc.pskin + (plefttop[2] >> 16) +
-	    (plefttop[3] >> 16) * r_affinetridesc.skinwidth;
+	d_ptex = (byte *) pskin + (plefttop[2] >> 16) +
+	    (plefttop[3] >> 16) * skinwidth;
 #if id386
 	r->d_sfrac = (plefttop[2] & 0xFFFF) << 16;
 	r->d_tfrac = (plefttop[3] & 0xFFFF) << 16;
@@ -1559,7 +1540,7 @@ Referenced by D_DrawNonSubdiv().
 	r->d_countextrastep = r->ubasestep + 1;
 	d_ptexbasestep = ((r->r_sstepy + r->r_sstepx * r->ubasestep) >> 16) +
 	    ((r->r_tstepy + r->r_tstepx * r->ubasestep) >> 16) *
-	    r_affinetridesc.skinwidth;
+	    skinwidth;
 #if id386
 	r->d_sfracbasestep = (r->r_sstepy + r->r_sstepx * r->ubasestep) << 16;
 	r->d_tfracbasestep = (r->r_tstepy + r->r_tstepx * r->ubasestep) << 16;
@@ -1576,7 +1557,7 @@ Referenced by D_DrawNonSubdiv().
 	    ((r->r_sstepy + r->r_sstepx * r->d_countextrastep) >> 16) +
 	    ((r->r_tstepy +
 	      r->r_tstepx * r->d_countextrastep) >> 16) *
-	    r_affinetridesc.skinwidth;
+	    skinwidth;
 #if id386
 	r->d_sfracextrastep =
 	    (r->r_sstepy + r->r_sstepx * r->d_countextrastep) << 16;
@@ -1592,7 +1573,7 @@ Referenced by D_DrawNonSubdiv().
 	r->d_ziextrastep = r->d_zibasestep + r->r_zistepx;
 
 	D_PolysetScanLeftEdge(initialleftheight, d_pdest, d_ptex,
-			      d_ptexbasestep, d_ptexextrastep, r);
+			      d_ptexbasestep, d_ptexextrastep, r, skinwidth);
 
 //
 // scan out the bottom part of the left edge, if it exists
@@ -1612,8 +1593,8 @@ Referenced by D_DrawNonSubdiv().
 
 		ystart = plefttop[1];
 		r->d_aspancount = plefttop[0] - prighttop[0];
-		d_ptex = (byte *) r_affinetridesc.pskin + (plefttop[2] >> 16) +
-		    (plefttop[3] >> 16) * r_affinetridesc.skinwidth;
+		d_ptex = (byte *) pskin + (plefttop[2] >> 16) +
+		    (plefttop[3] >> 16) * skinwidth;
 		r->d_sfrac = 0;
 		r->d_tfrac = 0;
 		r->d_light = plefttop[4];
@@ -1642,7 +1623,7 @@ Referenced by D_DrawNonSubdiv().
 		    ((r->r_sstepy + r->r_sstepx * r->ubasestep) >> 16) +
 		    ((r->r_tstepy +
 		      r->r_tstepx * r->ubasestep) >> 16) *
-		    r_affinetridesc.skinwidth;
+		    skinwidth;
 #if id386
 		r->d_sfracbasestep =
 		    (r->r_sstepy + r->r_sstepx * r->ubasestep) << 16;
@@ -1662,7 +1643,7 @@ Referenced by D_DrawNonSubdiv().
 		    ((r->r_sstepy + r->r_sstepx * r->d_countextrastep) >> 16) +
 		    ((r->r_tstepy +
 		      r->r_tstepx * r->d_countextrastep) >> 16) *
-		    r_affinetridesc.skinwidth;
+		    skinwidth;
 #if id386
 		r->d_sfracextrastep =
 		    ((r->r_sstepy +
@@ -1680,7 +1661,7 @@ Referenced by D_DrawNonSubdiv().
 		r->d_ziextrastep = r->d_zibasestep + r->r_zistepx;
 
 		D_PolysetScanLeftEdge(height, d_pdest, d_ptex, d_ptexbasestep,
-				      d_ptexextrastep, r);
+				      d_ptexextrastep, r, skinwidth);
 	}
 // scan out the top (and possibly only) part of the right edge, updating the
 // count field
@@ -1693,7 +1674,7 @@ Referenced by D_DrawNonSubdiv().
 	originalcount = r->a_spans[initialrightheight].count;
 	r->a_spans[initialrightheight].count = -999999;	// mark end of the spanpackages
 	D_PolysetDrawSpans8(r->a_spans, d_viewbuffer, r, acolormap,
-			    r_affinetridesc.skinwidth);
+			    skinwidth);
 
 #if 0
 	printf("%s:%d\n", __func__, __LINE__);
@@ -1723,7 +1704,7 @@ Referenced by D_DrawNonSubdiv().
 		printf("%s:%d\n", __func__, __LINE__);
 #endif
 		D_PolysetDrawSpans8(pstart, d_viewbuffer, r, acolormap,
-				    r_affinetridesc.skinwidth);
+				    skinwidth);
 	}
 }
 
@@ -1789,11 +1770,11 @@ Referenced by D_PolysetDraw().
 
 		if (!ptri->facesfront) {
 			if (index0->flags & ALIAS_ONSEAM)
-				r_p0[2] += r_affinetridesc.seamfixupX16;
+				r_p0[2] += fm->seamfixupX16;
 			if (index1->flags & ALIAS_ONSEAM)
-				r_p1[2] += r_affinetridesc.seamfixupX16;
+				r_p1[2] += fm->seamfixupX16;
 			if (index2->flags & ALIAS_ONSEAM)
-				r_p2[2] += r_affinetridesc.seamfixupX16;
+				r_p2[2] += fm->seamfixupX16;
 		}
 
 		D_PolysetSetEdgeTable(r);
@@ -1803,7 +1784,7 @@ Referenced by D_PolysetDraw().
 #endif
 		D_RasterizeAliasPolySmooth(d_viewbuffer, d_pzbuffer, acolormap,
 					   r, d_zwidth, screenwidth, *d_xdenom,
-					   skinwidth);
+					   fm->pskin, skinwidth);
 	}
 }
 
@@ -1819,7 +1800,7 @@ struct r_view {
 static void D_PolysetDraw(const struct r_view *v,
 			  byte * acolormap, struct r_state *r,
 			  byte **skintable,
-			  int skinwidth, struct r_finalmesh *fm)
+			  int skinwidth, struct r_finalmesh *fm, int drawtype)
 /*
 Definition at line 132 of file d_polyse.c.
 
@@ -1836,7 +1817,7 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 	r->a_spans = (spanpackage_t *)
 	    (((long)&spans[0] + CACHE_SIZE - 1) & ~(CACHE_SIZE - 1));
 
-	if (r_affinetridesc.drawtype) {
+	if (drawtype) {
 #if 0
 		printf("%s:%d\n", __func__, __LINE__);
 #endif
@@ -2220,7 +2201,7 @@ Referenced by R_AliasPreparePoints().
 
 			if (!ptri->facesfront
 			    && (fv[0][i].flags & ALIAS_ONSEAM))
-				fv[0][i].v[2] += r_affinetridesc.seamfixupX16;
+				fv[0][i].v[2] += fm->seamfixupX16;
 		}
 	}
 
@@ -2294,19 +2275,8 @@ Referenced by R_AliasPreparePoints().
 	}
 
 // draw triangles
-	mtri.facesfront = ptri->facesfront;
-	fm->triangles = &mtri;
 	fm->finalverts = fv[pingpong];
 	return k;
-#if 0
-// FIXME: do all at once as trifan?
-	mtri.vertindex[0] = 0;
-	for (i = 1; i < k - 1; i++) {
-		mtri.vertindex[1] = i;
-		mtri.vertindex[2] = i + 1;
-		D_PolysetDraw(v, acolormap, r, skintable, skinwidth);
-	}
-#endif
 }
 
 static void R_AliasPreparePoints(entity_t * ent, const struct r_view *v,
@@ -2318,7 +2288,7 @@ static void R_AliasPreparePoints(entity_t * ent, const struct r_view *v,
 				 float r_framelerp, float ziscale,
 				 float r_lerpdistance, int r_ambientlight,
 				 struct r_scale *rs, struct r_vects *rve,
-				 float r_shadelight, byte **skintable, struct r_finalmesh *fm)
+				 float r_shadelight, byte **skintable, struct r_finalmesh *fm, int drawtype)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2385,7 +2355,7 @@ Referenced by R_AliasDrawModel().
 			// totally unclipped
 			fm->finalverts = pfinalverts;
 			fm->triangles = ptri;
-			D_PolysetDraw(v, acolormap, r, skintable, skinwidth, fm);
+			D_PolysetDraw(v, acolormap, r, skintable, skinwidth, fm, drawtype);
 		} else {
 			// partially clipped
 			int i;
@@ -2394,14 +2364,12 @@ Referenced by R_AliasDrawModel().
 					    skinwidth, pauxverts, pfinalverts,
 					    rs, skintable, fm);
 			fm->triangles = &mtri;
-			// FIXME: do all at once as trifan?
-			mtri.facesfront = ptri->facesfront;
-			fm->triangles->vertindex[0] = 0;
-			mtri.vertindex[0] = 0;
 			for (i = 1; i < ntris - 1; i++) {
-				mtri.vertindex[1] = i;
-				mtri.vertindex[2] = i + 1;
-				D_PolysetDraw(v, acolormap, r, skintable, skinwidth, fm);
+				fm->triangles[0].facesfront = ptri->facesfront;
+				fm->triangles[0].vertindex[0] = 0;
+				fm->triangles[0].vertindex[1] = i;
+				fm->triangles[0].vertindex[2] = i + 1;
+				D_PolysetDraw(v, acolormap, r, skintable, skinwidth, fm, drawtype);
 			}
 		}
 	}
@@ -2530,7 +2498,7 @@ static void R_AliasPrepareUnclippedPoints(const struct r_view *v,
 					  struct r_scale *rs,
 					  struct r_vects *rve,
 					  float r_shadelight,
-					  byte **skintable, struct r_finalmesh *fm)
+					  byte **skintable, struct r_finalmesh *fm, int drawtype)
 /*
 Definition at line 466 of file r_alias.c.
 
@@ -2550,7 +2518,7 @@ Referenced by R_AliasDrawModel().
 					     r_ambientlight, rs, rve,
 					     r_shadelight);
 
-	if (r_affinetridesc.drawtype)
+	if (drawtype)
 		D_PolysetDrawFinalVerts(pfinalverts, r_anumverts, v,
 					acolormap, skintable);
 
@@ -3604,7 +3572,7 @@ void write_png_file(char *file_name, int width,
 		    int height, const unsigned char *buffer);
 
 static void R_AliasSetupSkin(entity_t * ent, mdl_t * pmdl,
-			     aliashdr_t * paliashdr)
+			     aliashdr_t * paliashdr, struct r_finalmesh *fm)
 /*
 Definition at line 484 of file r_alias.c.
 
@@ -3656,28 +3624,11 @@ Referenced by R_AliasDrawModel().
 		pskindesc = &paliasskingroup->skindescs[i];
 	}
 
-	r_affinetridesc.pskindesc = pskindesc;
-	r_affinetridesc.pskin = (void *)((byte *) paliashdr + pskindesc->skin);
-	r_affinetridesc.skinwidth = a_skinwidth;
-	r_affinetridesc.seamfixupX16 = (a_skinwidth >> 1) << 16;
-	r_affinetridesc.skinheight = pmdl->skinheight;
-	write_png_file("skin.png", r_affinetridesc.skinwidth,
-		       r_affinetridesc.skinheight, r_affinetridesc.pskin);
+	fm->pskin = (void *)((byte *) paliashdr + pskindesc->skin);
+	fm->seamfixupX16 = (a_skinwidth >> 1) << 16;
+	write_png_file("skin.png", pmdl->skinwidth,
+		       pmdl->skinheight, (void *)((byte *) paliashdr + pskindesc->skin));
 
-/* Skin stuff not yet */
-
-#if 0
-	if (ent->scoreboard) {
-		if (!ent->scoreboard->skin)
-			Skin_Find(ent->scoreboard);
-		base = Skin_Cache(ent->scoreboard->skin, false);
-		if (base) {
-			r_affinetridesc.pskin = base;
-			r_affinetridesc.skinwidth = 320;
-			r_affinetridesc.skinheight = 200;
-		}
-	}
-#endif
 }
 
 /*
@@ -3951,12 +3902,12 @@ static void R_AliasSetupFrame(entity_t * ent, aliashdr_t * paliashdr,
 	R_AliasSetupFrameVerts(ent->frame, &rv->r_apverts, paliashdr);
 }
 
-static void D_PolysetUpdateTables(byte **skintable, int skinwidth)
+static void D_PolysetUpdateTables(byte **skintable, void *pskin, int skinwidth)
 {
 	int i;
 	byte *s;
 
-	s = r_affinetridesc.pskin;
+	s = pskin;
 	for (i = 0; i < MAX_LBM_HEIGHT; i++, s += skinwidth)
 		skintable[i] = s;
 }
@@ -4036,6 +3987,8 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	int r_ambientlight;
 	float r_shadelight;
 	struct r_finalmesh fm;
+	int skinwidth;
+	int drawtype;
 
 	finalvert_t finalverts[MAXALIASVERTS +
 			       ((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
@@ -4077,7 +4030,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 			     ~(CACHE_SIZE - 1));
 	pauxverts = &auxverts[0];
 
-	R_AliasSetupSkin(ent, pmdl, paliashdr);
+	R_AliasSetupSkin(ent, pmdl, paliashdr, &fm);
 	R_AliasSetUpTransform(ent, ent->trivial_accept, pmdl, modelorg,
 			      rs->aliasxscale, rs->aliasyscale, r_viewmodelsize,
 			      rve);
@@ -4088,10 +4041,11 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	if (!ent->colormap)
 		Sys_Error("R_AliasDrawModel: !ent->colormap");
 
-	r_affinetridesc.drawtype = (ent->trivial_accept == 3);
+	drawtype = (ent->trivial_accept == 3);
 
-	if (r_affinetridesc.drawtype)
-		D_PolysetUpdateTables(skintable, r_affinetridesc.skinwidth);	// FIXME: precalc...
+	skinwidth = pmdl->skinwidth;
+	if (drawtype)
+		D_PolysetUpdateTables(skintable, fm.pskin, skinwidth);	// FIXME: precalc...
 #ifdef id386
 	else
 		D_Aff8Patch(ent->colormap);
@@ -4107,20 +4061,20 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	if (ent->trivial_accept) {
 		R_AliasPrepareUnclippedPoints(view,
 					      ent->colormap, &r,
-					      r_affinetridesc.skinwidth, pmdl,
+					      skinwidth, pmdl,
 					      paliashdr, &rv, pfinalverts,
 					      r_framelerp, r_ambientlight, rs,
-					      rve, r_shadelight, skintable, &fm);
+					      rve, r_shadelight, skintable, &fm, drawtype);
 
 		D_PolysetDraw(view, ent->colormap, &r,
-		      		skintable, r_affinetridesc.skinwidth, &fm);
+		      		skintable, skinwidth, &fm, drawtype);
 	} else {
 		R_AliasPreparePoints(ent, view,
 				     ent->colormap, &r,
-				     r_affinetridesc.skinwidth, pmdl,
+				     skinwidth, pmdl,
 				     paliashdr, pauxverts, &rv, pfinalverts,
 				     r_framelerp, ziscale, r_lerpdistance,
-				     r_ambientlight, rs, rve, r_shadelight, skintable, &fm);
+				     r_ambientlight, rs, rve, r_shadelight, skintable, &fm, drawtype);
 	}
 }
 
@@ -4207,7 +4161,6 @@ static void loopfunc(void *data)
 	for (i = 0; i < HEIGHT; i++) {
 		view.d_scantable[i] = i * WIDTH;
 		view.zspantable[i] = d_pzbuffer + i * ZWIDTH;
-		printf("zspantable[%d] = %p\n", i, d_pzbuffer + i * ZWIDTH);
 	}
 	R_AliasDrawModel(ent, &view,
 			 cd->origin, 1,	/* r_lerpframes */
@@ -4226,7 +4179,7 @@ int main(int argc, char *argv[])
 	byte *pb;
 	entity_t ent;
 	struct control_data *cd;
-	int i, j, fd, opt, ret;
+	int i, j, fd, opt;
 	model_t m;
 	char fname[PATH_MAX];
 	pixel_t *d_viewbuffer;
