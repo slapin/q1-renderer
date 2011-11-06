@@ -15,3 +15,6 @@ clean:
 
 .PHONY: all clean
 
+poly.o: poly.c triangle.h
+triangle.o: triangle.c triangle.h
+
