@@ -997,7 +997,13 @@ static dlight_t cl_dlights[MAX_DLIGHTS];
 
 /* end of r_alias symbols */
 
-static void D_DrawSubdiv(pixel_t * d_viewbuffer, byte * acolormap, const short **zspantable, byte **skintable, int *d_scantable)
+struct r_finalmesh {
+	mtriangle_t *triangles;
+	finalvert_t *finalverts;
+	int ntriangles;
+};
+
+static void D_DrawSubdiv(pixel_t * d_viewbuffer, byte * acolormap, short * const *zspantable, byte **skintable, int *d_scantable, struct r_finalmesh *fm)
 /*
 Definition at line 190 of file d_polyse.c.
 
@@ -1012,9 +1018,9 @@ Referenced by D_PolysetDraw().
 	int lnumtriangles;
 	byte *d_pcolormap;
 
-	pfv = r_affinetridesc.pfinalverts;
-	ptri = r_affinetridesc.ptriangles;
-	lnumtriangles = r_affinetridesc.numtriangles;
+	pfv = fm->finalverts;
+	ptri = fm->triangles;
+	lnumtriangles = fm->ntriangles;
 
 #ifdef FTE_PEXT_TRANS
 #ifdef GLQUAKE
@@ -1723,7 +1729,7 @@ Referenced by D_DrawNonSubdiv().
 
 static void D_DrawNonSubdiv(pixel_t * d_viewbuffer, short *d_pzbuffer,
 			    byte * acolormap, struct r_state *r, int d_zwidth,
-			    int screenwidth, int *d_xdenom, int skinwidth)
+			    int screenwidth, int *d_xdenom, int skinwidth, struct r_finalmesh *fm)
 /*
 Definition at line 266 of file d_polyse.c.
 
@@ -1737,9 +1743,9 @@ Referenced by D_PolysetDraw().
 	int i;
 	int lnumtriangles;
 
-	pfv = r_affinetridesc.pfinalverts;
-	ptri = r_affinetridesc.ptriangles;
-	lnumtriangles = r_affinetridesc.numtriangles;
+	pfv = fm->finalverts;
+	ptri = fm->triangles;
+	lnumtriangles = fm->ntriangles;
 
 	for (i = 0; i < lnumtriangles; i++, ptri++) {
 		index0 = pfv + ptri->vertindex[0];
@@ -1806,14 +1812,14 @@ struct r_view {
 	short *zbuffer;
 	unsigned int zwidth;
 	int screenwidth;
-	short *zspantable[MAXHEIGHT];
+	short * zspantable[MAXHEIGHT];
 	int d_scantable[MAXHEIGHT];
 };
 
 static void D_PolysetDraw(const struct r_view *v,
 			  byte * acolormap, struct r_state *r,
 			  byte **skintable,
-			  int skinwidth)
+			  int skinwidth, struct r_finalmesh *fm)
 /*
 Definition at line 132 of file d_polyse.c.
 
@@ -1834,13 +1840,13 @@ Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareU
 #if 0
 		printf("%s:%d\n", __func__, __LINE__);
 #endif
-		D_DrawSubdiv(v->viewbuffer, acolormap, v->zspantable, skintable, v->d_scantable);
+		D_DrawSubdiv(v->viewbuffer, acolormap, v->zspantable, skintable, v->d_scantable, fm);
 	} else {
 #if 0
 		printf("%s:%d\n", __func__, __LINE__);
 #endif
 		D_DrawNonSubdiv(v->viewbuffer, v->zbuffer, acolormap, r,
-				v->zwidth, v->screenwidth, &d_xdenom, skinwidth);
+				v->zwidth, v->screenwidth, &d_xdenom, skinwidth, fm);
 	}
 }
 
@@ -2182,13 +2188,13 @@ Referenced by R_AliasClipTriangle().
 	}
 }
 
-static void R_AliasClipTriangle(mtriangle_t * ptri, const struct r_view *v,
+static int R_AliasClipTriangle(mtriangle_t * ptri, const struct r_view *v,
 				byte * acolormap,
 				struct r_state *r,
 				int skinwidth,
 				auxvert_t * pauxverts,
 				finalvert_t * pfinalverts, struct r_scale *rs,
-				byte **skintable)
+				byte **skintable, struct r_finalmesh *fm)
 /*
 Definition at line 245 of file r_aclip.c.
 
@@ -2228,7 +2234,7 @@ Referenced by R_AliasPreparePoints().
 		k = R_AliasClip(fv[0], fv[1], ALIAS_Z_CLIP, 3, R_Alias_clip_z,
 				rs);
 		if (k == 0)
-			return;
+			return 0;
 
 		pingpong = 1;
 		clipflags = fv[1][0].flags | fv[1][1].flags | fv[1][2].flags;
@@ -2241,7 +2247,7 @@ Referenced by R_AliasPreparePoints().
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
 				ALIAS_LEFT_CLIP, k, R_Alias_clip_left, rs);
 		if (k == 0)
-			return;
+			return 0;
 
 		pingpong ^= 1;
 	}
@@ -2250,7 +2256,7 @@ Referenced by R_AliasPreparePoints().
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
 				ALIAS_RIGHT_CLIP, k, R_Alias_clip_right, rs);
 		if (k == 0)
-			return;
+			return 0;
 
 		pingpong ^= 1;
 	}
@@ -2259,7 +2265,7 @@ Referenced by R_AliasPreparePoints().
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
 				ALIAS_BOTTOM_CLIP, k, R_Alias_clip_bottom, rs);
 		if (k == 0)
-			return;
+			return 0;
 
 		pingpong ^= 1;
 	}
@@ -2268,7 +2274,7 @@ Referenced by R_AliasPreparePoints().
 		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
 				ALIAS_TOP_CLIP, k, R_Alias_clip_top, rs);
 		if (k == 0)
-			return;
+			return 0;
 
 		pingpong ^= 1;
 	}
@@ -2289,9 +2295,10 @@ Referenced by R_AliasPreparePoints().
 
 // draw triangles
 	mtri.facesfront = ptri->facesfront;
-	r_affinetridesc.ptriangles = &mtri;
-	r_affinetridesc.pfinalverts = fv[pingpong];
-
+	fm->triangles = &mtri;
+	fm->finalverts = fv[pingpong];
+	return k;
+#if 0
 // FIXME: do all at once as trifan?
 	mtri.vertindex[0] = 0;
 	for (i = 1; i < k - 1; i++) {
@@ -2299,6 +2306,7 @@ Referenced by R_AliasPreparePoints().
 		mtri.vertindex[2] = i + 1;
 		D_PolysetDraw(v, acolormap, r, skintable, skinwidth);
 	}
+#endif
 }
 
 static void R_AliasPreparePoints(entity_t * ent, const struct r_view *v,
@@ -2310,7 +2318,7 @@ static void R_AliasPreparePoints(entity_t * ent, const struct r_view *v,
 				 float r_framelerp, float ziscale,
 				 float r_lerpdistance, int r_ambientlight,
 				 struct r_scale *rs, struct r_vects *rve,
-				 float r_shadelight, byte **skintable)
+				 float r_shadelight, byte **skintable, struct r_finalmesh *fm)
 /*
 Definition at line 254 of file r_alias.c.
 
@@ -2358,7 +2366,7 @@ Referenced by R_AliasDrawModel().
 		}
 	}
 
-	r_affinetridesc.numtriangles = 1;
+	fm->ntriangles = 1;
 
 	ptri = (mtriangle_t *) ((byte *) paliashdr + paliashdr->triangles);
 	for (i = 0; i < pmdl->numtris; i++, ptri++) {
@@ -2375,14 +2383,26 @@ Referenced by R_AliasDrawModel().
 		      flags | pfv[2]->flags) & (ALIAS_XY_CLIP_MASK |
 						ALIAS_Z_CLIP))) {
 			// totally unclipped
-			r_affinetridesc.pfinalverts = pfinalverts;
-			r_affinetridesc.ptriangles = ptri;
-			D_PolysetDraw(v, acolormap, r, skintable, skinwidth);
+			fm->finalverts = pfinalverts;
+			fm->triangles = ptri;
+			D_PolysetDraw(v, acolormap, r, skintable, skinwidth, fm);
 		} else {
 			// partially clipped
-			R_AliasClipTriangle(ptri, v, acolormap, r,
+			int i;
+			mtriangle_t mtri;
+			int ntris = R_AliasClipTriangle(ptri, v, acolormap, r,
 					    skinwidth, pauxverts, pfinalverts,
-					    rs, skintable);
+					    rs, skintable, fm);
+			fm->triangles = &mtri;
+			// FIXME: do all at once as trifan?
+			mtri.facesfront = ptri->facesfront;
+			fm->triangles->vertindex[0] = 0;
+			mtri.vertindex[0] = 0;
+			for (i = 1; i < ntris - 1; i++) {
+				mtri.vertindex[1] = i;
+				mtri.vertindex[2] = i + 1;
+				D_PolysetDraw(v, acolormap, r, skintable, skinwidth, fm);
+			}
 		}
 	}
 }
@@ -2510,7 +2530,7 @@ static void R_AliasPrepareUnclippedPoints(const struct r_view *v,
 					  struct r_scale *rs,
 					  struct r_vects *rve,
 					  float r_shadelight,
-					  byte **skintable)
+					  byte **skintable, struct r_finalmesh *fm)
 /*
 Definition at line 466 of file r_alias.c.
 
@@ -2534,13 +2554,10 @@ Referenced by R_AliasDrawModel().
 		D_PolysetDrawFinalVerts(pfinalverts, r_anumverts, v,
 					acolormap, skintable);
 
-	r_affinetridesc.pfinalverts = pfinalverts;
-	r_affinetridesc.ptriangles =
+	fm->finalverts = pfinalverts;
+	fm->triangles =
 	    (mtriangle_t *) ((byte *) paliashdr + paliashdr->triangles);
-	r_affinetridesc.numtriangles = pmdl->numtris;
-
-	D_PolysetDraw(v, acolormap, r,
-		      skintable, skinwidth);
+	fm->ntriangles = pmdl->numtris;
 }
 
 #if 0
@@ -3583,6 +3600,9 @@ Referenced by R_AliasDrawModel().
 	return true;
 }
 
+void write_png_file(char *file_name, int width,
+		    int height, const unsigned char *buffer);
+
 static void R_AliasSetupSkin(entity_t * ent, mdl_t * pmdl,
 			     aliashdr_t * paliashdr)
 /*
@@ -4015,6 +4035,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	float ziscale;
 	int r_ambientlight;
 	float r_shadelight;
+	struct r_finalmesh fm;
 
 	finalvert_t finalverts[MAXALIASVERTS +
 			       ((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
@@ -4083,20 +4104,24 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
 	rs->ziscale = ziscale;
 
-	if (ent->trivial_accept)
+	if (ent->trivial_accept) {
 		R_AliasPrepareUnclippedPoints(view,
 					      ent->colormap, &r,
 					      r_affinetridesc.skinwidth, pmdl,
 					      paliashdr, &rv, pfinalverts,
 					      r_framelerp, r_ambientlight, rs,
-					      rve, r_shadelight, skintable);
-	else
+					      rve, r_shadelight, skintable, &fm);
+
+		D_PolysetDraw(view, ent->colormap, &r,
+		      		skintable, r_affinetridesc.skinwidth, &fm);
+	} else {
 		R_AliasPreparePoints(ent, view,
 				     ent->colormap, &r,
 				     r_affinetridesc.skinwidth, pmdl,
 				     paliashdr, pauxverts, &rv, pfinalverts,
 				     r_framelerp, ziscale, r_lerpdistance,
-				     r_ambientlight, rs, rve, r_shadelight, skintable);
+				     r_ambientlight, rs, rve, r_shadelight, skintable, &fm);
+	}
 }
 
 static void load_model(int type, model_t *model, char *filename)
@@ -4106,15 +4131,15 @@ static void load_model(int type, model_t *model, char *filename)
 	unsigned char *data;
 	int ret = stat(filename, &buf);
 	if (ret < 0)
-		return NULL;
+		return;
 	data = malloc(buf.st_size);
 	fd = open(filename, O_RDONLY);
 	l = read(fd, data, buf.st_size);
+	close(fd);
 	if (l != buf.st_size) {
 		free(data);
-		return NULL;
+		return;
 	}
-	close(fd);
 	strcpy(model->name, filename);
 	Mod_LoadAliasModel(model, data, buf.st_size);
 }
@@ -4153,6 +4178,7 @@ static void write_xbm(char *name, int width, int height, unsigned char *pixdata)
 	free(buf);
 }
 
+void updatescr(unsigned char *ptr);
 static void loopfunc(void *data)
 {
 	int i;
@@ -4207,6 +4233,10 @@ int main(int argc, char *argv[])
 	short *d_pzbuffer;
 	float res_scale;
 	vec3_t r_origin;
+	void initgfx(void);
+	void do_key_loop(void (*loopfunc) (void *data), void *data);
+	void stopgfx(void);
+
 	initgfx();
 
 	strcpy(m.name, "test");
@@ -4252,31 +4282,6 @@ int main(int argc, char *argv[])
 	}
 	argc -= optind;
 	argv += optind;
-#if 0
-	mtriangle_t tris[10];
-	finalvert_t verts[30];
-	int i;
-	for (i = 0; i < sizeof(tris) / sizeof(tris[0]); i++) {
-		tris[i].facesfront = 1;
-		tris[i].vertindex[0] = i + 0;
-		tris[i].vertindex[1] = i + 1;
-		tris[i].vertindex[2] = i + 2;
-	}
-	for (i = 0; i < sizeof(verts) / sizeof(verts[0]); i++) {
-		verts[i].v[0] = i;
-		verts[i].v[1] = i;
-		verts[i].v[2] = 0;
-		verts[i].v[3] = 0;
-		verts[i].v[4] = 0;
-		verts[i].v[5] = 20;
-		verts[i].flags = 0;
-		verts[i].reserved = 0;
-	}
-	r_affinetridesc.pfinalverts = verts;
-	r_affinetridesc.ptriangles = tris;
-	r_affinetridesc.numtriangles = 10;
-	D_PolysetDraw();
-#endif
 	ent.origin[0] = 0.0;
 	ent.origin[1] = 5;
 	ent.origin[2] = 5.0;
