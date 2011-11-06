@@ -759,17 +759,6 @@ typedef struct maliasgroup_s {
 } maliasgroup_t;
 
 typedef struct {
-	double time;
-	qbool allow_cheats;
-	qbool allow_lumas;
-	float max_watervis;	// how much water transparency we allow: 0..1 (reverse of alpha)
-	float max_fbskins;	// max player skin brightness 0..1
-//  int             viewplayernum;  // don't draw own glow when gl_flashblend 1
-
-//  lightstyle_t    *lightstyles;
-} refdef2_t;
-
-typedef struct {
 	int index0;
 	int index1;
 } aedge_t;
@@ -970,9 +959,6 @@ static const float r_avertexnormals[NUMVERTEXNORMALS][3] = {
 	{-0.688191, -0.587785, -0.425325},
 };
 
-static finalvert_t pafv[2][8];
-// static auxvert_t paav[8];
-static refdef2_t r_refdef2;
 static const aedge_t aedges[12] = {
 	{0, 1}, {1, 2}, {2, 3}, {3, 0},
 	{4, 5}, {5, 6}, {6, 7}, {7, 4},
@@ -3321,7 +3307,7 @@ References ALIAS_BOTTOM_CLIP, ALIAS_LEFT_CLIP, ALIAS_RIGHT_CLIP, ALIAS_TOP_CLIP,
 }
 
 static void R_AliasCheckBBoxFrame(int frame, trivertx_t ** mins,
-				  trivertx_t ** maxs, aliashdr_t * paliashdr)
+				  trivertx_t ** maxs, aliashdr_t * paliashdr, double reftime)
 /*
 Definition at line 95 of file r_alias.c.
 
@@ -3351,8 +3337,8 @@ Referenced by R_AliasCheckBBox().
 		// when loading in Mod_LoadAliasGroup, we guaranteed all interval values
 		// are positive, so we don't have to worry about division by 0
 		targettime =
-		    r_refdef2.time -
-		    ((int)(r_refdef2.time / fullinterval)) * fullinterval;
+		    reftime -
+		    ((int)(reftime / fullinterval)) * fullinterval;
 
 		for (i = 0; i < numframes - 1; i++) {
 			if (pintervals[i] > targettime)
@@ -3369,7 +3355,7 @@ static qbool R_AliasCheckBBox(entity_t * ent, mdl_t * pmdl,
 			      float r_viewmodelsize, float xscale, float yscale,
 			      float xcenter, float ycenter,
 			      float r_aliastransition, struct r_vects *rve,
-			      float r_resfudge)
+			      float r_resfudge, double reftime)
 /*
 Definition at line 122 of file r_alias.c.
 
@@ -3408,7 +3394,7 @@ Referenced by R_AliasDrawModel().
 #endif
 	// construct the base bounding box for this frame
 	if (r_framelerp == 1) {
-		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs, paliashdr);
+		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs, paliashdr, reftime);
 
 		// x worldspace coordinates
 		basepts[0][0] = basepts[1][0] = basepts[2][0] = basepts[3][0] =
@@ -3427,8 +3413,8 @@ Referenced by R_AliasDrawModel().
 		    (float)maxs->v[2];
 	} else {
 		R_AliasCheckBBoxFrame(ent->oldframe, &oldmins, &oldmaxs,
-				      paliashdr);
-		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs, paliashdr);
+				      paliashdr, reftime);
+		R_AliasCheckBBoxFrame(ent->frame, &mins, &maxs, paliashdr, reftime);
 
 		// x worldspace coordinates
 		basepts[0][0] = basepts[1][0] = basepts[2][0] = basepts[3][0] =
@@ -3574,7 +3560,7 @@ void write_png_file(char *file_name, int width,
 		    int height, const unsigned char *buffer);
 
 static void R_AliasSetupSkin(entity_t * ent, mdl_t * pmdl,
-			     aliashdr_t * paliashdr, struct r_finalmesh *fm)
+			     aliashdr_t * paliashdr, struct r_finalmesh *fm, double reftime)
 /*
 Definition at line 484 of file r_alias.c.
 
@@ -3610,7 +3596,7 @@ Referenced by R_AliasDrawModel().
 		numskins = paliasskingroup->numskins;
 		fullskininterval = pskinintervals[numskins - 1];
 
-		skintime = r_refdef2.time;
+		skintime = reftime;
 
 		// when loading in Mod_LoadAliasSkinGroup, we guaranteed all interval
 		// values are positive, so we don't have to worry about division by 0
@@ -3792,7 +3778,7 @@ Referenced by AddParticleTrail(), Cam_Track(), Cam_TryFlyby(), Classic_ParticleT
 
 static void R_AliasSetupLighting(entity_t * ent, int *r_ambientlight,
 				 float r_fullbrightSkins, struct r_vects *rve,
-				 float *r_shadelight, model_t * worldmodel)
+				 float *r_shadelight, model_t * worldmodel, double reftime, float max_fbskins)
 /*
 Definition at line 537 of file r_alias.c.
 
@@ -3808,7 +3794,7 @@ Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
 	ambientlight = shadelight = R_LightPoint(ent->origin, worldmodel);
 
 	for (lnum = 0; lnum < MAX_DLIGHTS; lnum++) {
-		if (cl_dlights[lnum].die < r_refdef2.time
+		if (cl_dlights[lnum].die < reftime
 		    || !cl_dlights[lnum].radius)
 			continue;
 
@@ -3836,7 +3822,7 @@ Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
 	}
 
 	if (ent->model->modhint == MOD_PLAYER || ent->renderfx & RF_PLAYERMODEL) {
-		fbskins = bound(0, r_fullbrightSkins, r_refdef2.max_fbskins);
+		fbskins = bound(0, r_fullbrightSkins, max_fbskins);
 		if (fbskins) {
 			ambientlight = max(ambientlight, 8 + fbskins * 120);
 			shadelight = max(shadelight, 8 + fbskins * 120);
@@ -3861,7 +3847,7 @@ Referenced by R_AliasDrawModel(), R_DrawAlias3Model(), and R_DrawAliasModel().
 }
 
 static void R_AliasSetupFrameVerts(int frame, trivertx_t ** verts,
-				   aliashdr_t * paliashdr)
+				   aliashdr_t * paliashdr, double reftime)
 {
 	int i, numframes;
 	maliasgroup_t *paliasgroup;
@@ -3883,8 +3869,8 @@ static void R_AliasSetupFrameVerts(int frame, trivertx_t ** verts,
 		// when loading in Mod_LoadAliasGroup, we guaranteed all interval values
 		// are positive, so we don't have to worry about division by 0
 		targettime =
-		    r_refdef2.time -
-		    ((int)(r_refdef2.time / fullinterval)) * fullinterval;
+		    reftime -
+		    ((int)(reftime / fullinterval)) * fullinterval;
 
 		for (i = 0; i < numframes - 1; i++) {
 			if (pintervals[i] > targettime)
@@ -3898,10 +3884,10 @@ static void R_AliasSetupFrameVerts(int frame, trivertx_t ** verts,
 
 //set r_oldapverts, r_apverts
 static void R_AliasSetupFrame(entity_t * ent, aliashdr_t * paliashdr,
-			      struct r_verts *rv)
+			      struct r_verts *rv, double reftime)
 {
-	R_AliasSetupFrameVerts(ent->oldframe, &rv->r_oldapverts, paliashdr);
-	R_AliasSetupFrameVerts(ent->frame, &rv->r_apverts, paliashdr);
+	R_AliasSetupFrameVerts(ent->oldframe, &rv->r_oldapverts, paliashdr, reftime);
+	R_AliasSetupFrameVerts(ent->frame, &rv->r_apverts, paliashdr, reftime);
 }
 
 static void D_PolysetUpdateTables(byte **skintable, void *pskin, int skinwidth)
@@ -3991,6 +3977,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 	struct r_finalmesh fm;
 	int skinwidth;
 	int drawtype;
+	double reftime = 0.0;
 
 	finalvert_t finalverts[MAXALIASVERTS +
 			       ((CACHE_SIZE - 1) / sizeof(finalvert_t)) + 1];
@@ -4023,7 +4010,7 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 		if (!R_AliasCheckBBox(ent, pmdl, paliashdr, modelorg,
 				      r_framelerp, rs, r_viewmodelsize, ms->xscale,
 				      ms->yscale, ms->xcenter, ms->ycenter,
-				      r_aliastransition, rve, r_resfudge))
+				      r_aliastransition, rve, r_resfudge, reftime))
 			return;
 	}
 	// cache align
@@ -4032,13 +4019,13 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 			     ~(CACHE_SIZE - 1));
 	pauxverts = &auxverts[0];
 
-	R_AliasSetupSkin(ent, pmdl, paliashdr, &fm);
+	R_AliasSetupSkin(ent, pmdl, paliashdr, &fm, reftime);
 	R_AliasSetUpTransform(ent, ent->trivial_accept, pmdl, modelorg,
 			      rs->aliasxscale, rs->aliasyscale, r_viewmodelsize,
 			      rve);
 	R_AliasSetupLighting(ent, &r_ambientlight, 0.0, rve, &r_shadelight,
-			     worldmodel);
-	R_AliasSetupFrame(ent, paliashdr, &rv);
+			     worldmodel, reftime, 0.0);
+	R_AliasSetupFrame(ent, paliashdr, &rv, reftime);
 
 	if (!ent->colormap)
 		Sys_Error("R_AliasDrawModel: !ent->colormap");
