@@ -970,8 +970,8 @@ static const float r_avertexnormals[NUMVERTEXNORMALS][3] = {
 	{-0.688191, -0.587785, -0.425325},
 };
 
-static finalvert_t fv[2][8];
-static auxvert_t av[8];
+static finalvert_t pafv[2][8];
+// static auxvert_t paav[8];
 static refdef2_t r_refdef2;
 static const aedge_t aedges[12] = {
 	{0, 1}, {1, 2}, {2, 3}, {3, 0},
@@ -1938,6 +1938,8 @@ struct r_scale {
 	float aliasxcenter;
 	float aliasycenter;
 	float r_nearclip;
+	finalvert_t fv[2][8];
+	auxvert_t av[8];
 };
 
 static int R_AliasClip(finalvert_t * in, finalvert_t * out, int flag, int count,
@@ -2005,8 +2007,8 @@ Referenced by R_AliasClipTriangle().
 	float scale;
 	auxvert_t *pav0, *pav1, avout;
 
-	pav0 = &av[pfv0 - &fv[0][0]];
-	pav1 = &av[pfv1 - &fv[0][0]];
+	pav0 = &rs->av[pfv0 - &rs->fv[0][0]];
+	pav1 = &rs->av[pfv1 - &rs->fv[0][0]];
 
 	if (pfv0->v[1] >= pfv1->v[1]) {
 		scale = (rs->r_nearclip - pav0->fv[2]) /
@@ -2190,42 +2192,42 @@ Referenced by R_AliasPreparePoints().
 
 // copy vertexes and fix seam texture coordinates
 	if (ptri->facesfront) {
-		fv[0][0] = pfinalverts[ptri->vertindex[0]];
-		fv[0][1] = pfinalverts[ptri->vertindex[1]];
-		fv[0][2] = pfinalverts[ptri->vertindex[2]];
+		rs->fv[0][0] = pfinalverts[ptri->vertindex[0]];
+		rs->fv[0][1] = pfinalverts[ptri->vertindex[1]];
+		rs->fv[0][2] = pfinalverts[ptri->vertindex[2]];
 	} else {
 		printf("%s:%d not facesfront\n", __func__, __LINE__);
-		fv[0][0] = pfinalverts[ptri->vertindex[0]];
+		rs->fv[0][0] = pfinalverts[ptri->vertindex[0]];
 		for (i = 0; i < 3; i++) {
-			fv[0][i] = pfinalverts[ptri->vertindex[i]];
+			rs->fv[0][i] = pfinalverts[ptri->vertindex[i]];
 
 			if (!ptri->facesfront
-			    && (fv[0][i].flags & ALIAS_ONSEAM))
-				fv[0][i].v[2] += fm->seamfixupX16;
+			    && (rs->fv[0][i].flags & ALIAS_ONSEAM))
+				rs->fv[0][i].v[2] += fm->seamfixupX16;
 		}
 	}
 
 // clip
-	clipflags = fv[0][0].flags | fv[0][1].flags | fv[0][2].flags;
+	clipflags = rs->fv[0][0].flags | rs->fv[0][1].flags | rs->fv[0][2].flags;
 
 	if (clipflags & ALIAS_Z_CLIP) {
 		for (i = 0; i < 3; i++)
-			av[i] = pauxverts[ptri->vertindex[i]];
+			rs->av[i] = pauxverts[ptri->vertindex[i]];
 
-		k = R_AliasClip(fv[0], fv[1], ALIAS_Z_CLIP, 3, R_Alias_clip_z,
+		k = R_AliasClip(rs->fv[0], rs->fv[1], ALIAS_Z_CLIP, 3, R_Alias_clip_z,
 				rs);
 		if (k == 0)
 			return 0;
 
 		pingpong = 1;
-		clipflags = fv[1][0].flags | fv[1][1].flags | fv[1][2].flags;
+		clipflags = rs->fv[1][0].flags | rs->fv[1][1].flags | rs->fv[1][2].flags;
 	} else {
 		pingpong = 0;
 		k = 3;
 	}
 
 	if (clipflags & ALIAS_LEFT_CLIP) {
-		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
+		k = R_AliasClip(rs->fv[pingpong], rs->fv[pingpong ^ 1],
 				ALIAS_LEFT_CLIP, k, R_Alias_clip_left, rs);
 		if (k == 0)
 			return 0;
@@ -2234,7 +2236,7 @@ Referenced by R_AliasPreparePoints().
 	}
 
 	if (clipflags & ALIAS_RIGHT_CLIP) {
-		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
+		k = R_AliasClip(rs->fv[pingpong], rs->fv[pingpong ^ 1],
 				ALIAS_RIGHT_CLIP, k, R_Alias_clip_right, rs);
 		if (k == 0)
 			return 0;
@@ -2243,7 +2245,7 @@ Referenced by R_AliasPreparePoints().
 	}
 
 	if (clipflags & ALIAS_BOTTOM_CLIP) {
-		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
+		k = R_AliasClip(rs->fv[pingpong], rs->fv[pingpong ^ 1],
 				ALIAS_BOTTOM_CLIP, k, R_Alias_clip_bottom, rs);
 		if (k == 0)
 			return 0;
@@ -2252,7 +2254,7 @@ Referenced by R_AliasPreparePoints().
 	}
 
 	if (clipflags & ALIAS_TOP_CLIP) {
-		k = R_AliasClip(fv[pingpong], fv[pingpong ^ 1],
+		k = R_AliasClip(rs->fv[pingpong], rs->fv[pingpong ^ 1],
 				ALIAS_TOP_CLIP, k, R_Alias_clip_top, rs);
 		if (k == 0)
 			return 0;
@@ -2261,21 +2263,21 @@ Referenced by R_AliasPreparePoints().
 	}
 
 	for (i = 0; i < k; i++) {
-		if (fv[pingpong][i].v[0] < r_refdef.aliasvrect.x)
-			fv[pingpong][i].v[0] = r_refdef.aliasvrect.x;
-		else if (fv[pingpong][i].v[0] > r_refdef.aliasvrectright)
-			fv[pingpong][i].v[0] = r_refdef.aliasvrectright;
+		if (rs->fv[pingpong][i].v[0] < r_refdef.aliasvrect.x)
+			rs->fv[pingpong][i].v[0] = r_refdef.aliasvrect.x;
+		else if (rs->fv[pingpong][i].v[0] > r_refdef.aliasvrectright)
+			rs->fv[pingpong][i].v[0] = r_refdef.aliasvrectright;
 
-		if (fv[pingpong][i].v[1] < r_refdef.aliasvrect.y)
-			fv[pingpong][i].v[1] = r_refdef.aliasvrect.y;
-		else if (fv[pingpong][i].v[1] > r_refdef.aliasvrectbottom)
-			fv[pingpong][i].v[1] = r_refdef.aliasvrectbottom;
+		if (rs->fv[pingpong][i].v[1] < r_refdef.aliasvrect.y)
+			rs->fv[pingpong][i].v[1] = r_refdef.aliasvrect.y;
+		else if (rs->fv[pingpong][i].v[1] > r_refdef.aliasvrectbottom)
+			rs->fv[pingpong][i].v[1] = r_refdef.aliasvrectbottom;
 
-		fv[pingpong][i].flags = 0;
+		rs->fv[pingpong][i].flags = 0;
 	}
 
 // draw triangles
-	fm->finalverts = fv[pingpong];
+	fm->finalverts = rs->fv[pingpong];
 	return k;
 }
 
