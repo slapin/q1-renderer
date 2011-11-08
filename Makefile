@@ -1,7 +1,7 @@
 CFLAGS = -g -ggdb2 -O0 -Wall -Wuninitialized
 SRCM_NORMAL = main.c
 SRCM_NULL = main_null.c
-SRCS = poly.c triangle.c
+SRCS = poly.c triangle.c polyset.c
 OBJS_NORMAL = $(SRCM_NORMAL:.c=.o) $(SRCS:.c=.o)
 OBJS_NULL = $(SRCM_NULL:.c=.o) $(SRCS:.c=.o)
 all: poly poly-null
@@ -17,4 +17,5 @@ clean:
 
 poly.o: poly.c triangle.h
 triangle.o: triangle.c triangle.h
+polyset.o: polyset.c polyset.h
 
