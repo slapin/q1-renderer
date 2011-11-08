@@ -1047,7 +1047,6 @@ Referenced by R_AliasClipTriangle().
 
 static int R_AliasClipTriangle(mtriangle_t * ptri, const struct r_view *v,
 				byte * acolormap,
-				struct r_state *r,
 				int skinwidth,
 				auxvert_t * pauxverts,
 				finalvert_t * pfinalverts, struct r_scale *rs,
@@ -1157,7 +1156,6 @@ Referenced by R_AliasPreparePoints().
 
 static void R_AliasPreparePoints(entity_t * ent, const struct r_view *v,
 				 byte * acolormap,
-				 struct r_state *r,
 				 int skinwidth, mdl_t * pmdl,
 				 aliashdr_t * paliashdr, auxvert_t * pauxverts,
 				 struct r_verts *rv, finalvert_t * pfinalverts,
@@ -1231,12 +1229,12 @@ Referenced by R_AliasDrawModel().
 			// totally unclipped
 			fm->finalverts = pfinalverts;
 			fm->triangles = ptri;
-			D_PolysetDraw(v, acolormap, r, skintable, skinwidth, fm, drawtype);
+			D_PolysetDraw(v, acolormap, skintable, skinwidth, fm, drawtype);
 		} else {
 			// partially clipped
 			int i;
 			mtriangle_t mtri;
-			int ntris = R_AliasClipTriangle(ptri, v, acolormap, r,
+			int ntris = R_AliasClipTriangle(ptri, v, acolormap,
 					    skinwidth, pauxverts, pfinalverts,
 					    rs, skintable, fm);
 			fm->triangles = &mtri;
@@ -1245,7 +1243,7 @@ Referenced by R_AliasDrawModel().
 				fm->triangles[0].vertindex[0] = 0;
 				fm->triangles[0].vertindex[1] = i;
 				fm->triangles[0].vertindex[2] = i + 1;
-				D_PolysetDraw(v, acolormap, r, skintable, skinwidth, fm, drawtype);
+				D_PolysetDraw(v, acolormap, skintable, skinwidth, fm, drawtype);
 			}
 		}
 	}
@@ -1365,7 +1363,6 @@ Referenced by R_AliasPrepareUnclippedPoints().
 
 static void R_AliasPrepareUnclippedPoints(const struct r_view *v,
 					  byte * acolormap,
-					  struct r_state *r,
 					  int skinwidth,
 					  mdl_t * pmdl, aliashdr_t * paliashdr,
 					  struct r_verts *rv,
@@ -2850,7 +2847,6 @@ References acolormap, CACHE_SIZE, entity_s::colormap, Com_DPrintf(), D_Aff8Patch
 Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 */
 {
-	struct r_state r;
 	mdl_t *pmdl;
 	aliashdr_t *paliashdr;
 	auxvert_t *pauxverts;
@@ -2937,17 +2933,17 @@ Referenced by R_DrawEntitiesOnList(), and R_DrawViewModel().
 
 	if (ent->trivial_accept) {
 		R_AliasPrepareUnclippedPoints(view,
-					      ent->colormap, &r,
+					      ent->colormap,
 					      skinwidth, pmdl,
 					      paliashdr, &rv, pfinalverts,
 					      r_framelerp, r_ambientlight, rs,
 					      rve, r_shadelight, skintable, &fm, drawtype);
 
-		D_PolysetDraw(view, ent->colormap, &r,
+		D_PolysetDraw(view, ent->colormap,
 		      		skintable, skinwidth, &fm, drawtype);
 	} else {
 		R_AliasPreparePoints(ent, view,
-				     ent->colormap, &r,
+				     ent->colormap,
 				     skinwidth, pmdl,
 				     paliashdr, pauxverts, &rv, pfinalverts,
 				     r_framelerp, ziscale, r_lerpdistance,

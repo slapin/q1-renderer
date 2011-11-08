@@ -1,6 +1,62 @@
 #include <stddef.h>
 #include <math.h>
+#include "triangle.h"
 #include "polyset.h"
+typedef struct {
+	int isflattop;
+	int numleftedges;
+	int *pleftedgevert0;
+	int *pleftedgevert1;
+	int *pleftedgevert2;
+	int numrightedges;
+	int *prightedgevert0;
+	int *prightedgevert1;
+	int *prightedgevert2;
+} edgetable;
+typedef struct {
+	void *pdest;
+	short *pz;
+	int count;
+	unsigned char *ptex;
+	int sfrac, tfrac, light, zi;
+} spanpackage_t;
+struct r_state {
+	int ubasestep;
+	int d_aspancount;
+	int erroradjustup;
+	int erroradjustdown;
+	int errorterm;
+	int d_countextrastep;
+	int a_ststepxwhole;
+	int a_sstepxfrac;
+	int a_tstepxfrac;
+	int d_light;
+	int d_lightbasestep;
+	int d_lightextrastep;
+	int d_pdestbasestep;
+	int d_pdestextrastep;
+	short *d_pz;
+	int d_pzbasestep;
+	int d_pzextrastep;
+	int d_sfrac;
+	int d_sfracbasestep;
+	int d_sfracextrastep;
+	int d_tfrac;
+	int d_tfracbasestep;
+	int d_tfracextrastep;
+	int d_zi;
+	int d_zibasestep;
+	int d_ziextrastep;
+	int r_lstepx;
+	int r_lstepy;
+	int r_sstepx, r_sstepy;
+	int r_tstepx, r_tstepy;
+	int r_zistepx, r_zistepy;
+	spanpackage_t *d_pedgespanpackage;
+	spanpackage_t *a_spans;
+	edgetable *pedgetable;
+};
+
 static int r_p0[6], r_p1[6], r_p2[6];
 
 #define PARANOID
@@ -257,9 +313,6 @@ static const adivtab_t adivtab[32 * 32] = {
 };
 
 
-// static short *zspantable[MAXHEIGHT];
-// static int d_scantable[MAXHEIGHT];
-// static unsigned char *skintable[MAX_LBM_HEIGHT];
 static edgetable edgetables[12] = {
 	{0, 1, r_p0, r_p2, NULL, 2, r_p0, r_p1, r_p2},
 	{0, 2, r_p1, r_p0, r_p2, 1, r_p1, r_p2, NULL},
@@ -837,7 +890,7 @@ Referenced by D_DrawNonSubdiv().
 }
 
 static void D_DrawNonSubdiv(unsigned char * d_viewbuffer, short *d_pzbuffer,
-			    unsigned char * acolormap, struct r_state *r, int d_zwidth,
+			    unsigned char * acolormap, int d_zwidth,
 			    int screenwidth, int *d_xdenom, int skinwidth, struct r_finalmesh *fm)
 /*
 Definition at line 266 of file d_polyse.c.
@@ -851,6 +904,12 @@ Referenced by D_PolysetDraw().
 	finalvert_t *pfv, *index0, *index1, *index2;
 	int i;
 	int lnumtriangles;
+	spanpackage_t spans[DPS_MAXSPANS + 1 +
+			    ((CACHE_SIZE - 1) / sizeof(spanpackage_t)) + 1];
+	struct r_state r;
+
+	r.a_spans = (spanpackage_t *)
+	    (((long)&spans[0] + CACHE_SIZE - 1) & ~(CACHE_SIZE - 1));
 
 	pfv = fm->finalverts;
 	ptri = fm->triangles;
@@ -905,13 +964,13 @@ Referenced by D_PolysetDraw().
 				r_p2[2] += fm->seamfixupX16;
 		}
 
-		D_PolysetSetEdgeTable(r);
+		D_PolysetSetEdgeTable(&r);
 #if 0
 		printf("%s:%d running D_RasterizeAliasPolySmooth()\n", __func__,
 		       __LINE__);
 #endif
 		D_RasterizeAliasPolySmooth(d_viewbuffer, d_pzbuffer, acolormap,
-					   r, d_zwidth, screenwidth, *d_xdenom,
+					   &r, d_zwidth, screenwidth, *d_xdenom,
 					   fm->pskin, skinwidth);
 	}
 }
@@ -934,6 +993,7 @@ Referenced by D_PolysetDraw().
 	pfv = fm->finalverts;
 	ptri = fm->triangles;
 	lnumtriangles = fm->ntriangles;
+
 
 #ifdef FTE_PEXT_TRANS
 #ifdef GLQUAKE
@@ -999,7 +1059,7 @@ Referenced by D_PolysetDraw().
 }
 
 void D_PolysetDraw(const struct r_view *v,
-			  unsigned char * acolormap, struct r_state *r,
+			  unsigned char * acolormap,
 			  unsigned char **skintable,
 			  int skinwidth, struct r_finalmesh *fm, int drawtype)
 /*
@@ -1010,25 +1070,13 @@ References CACHE_SIZE, D_DrawNonSubdiv(), D_DrawSubdiv(), DPS_MAXSPANS, affinetr
 Referenced by R_AliasClipTriangle(), R_AliasPreparePoints(), and R_AliasPrepareUnclippedPoints().
 */
 {
-	spanpackage_t spans[DPS_MAXSPANS + 1 +
-			    ((CACHE_SIZE - 1) / sizeof(spanpackage_t)) + 1];
 	int d_xdenom;
 	// one extra because of cache line pretouching
 
-	r->a_spans = (spanpackage_t *)
-	    (((long)&spans[0] + CACHE_SIZE - 1) & ~(CACHE_SIZE - 1));
-
-	if (drawtype) {
-#if 0
-		printf("%s:%d\n", __func__, __LINE__);
-#endif
+	if (drawtype)
 		D_DrawSubdiv(v->viewbuffer, acolormap, v->zspantable, skintable, v->d_scantable, fm);
-	} else {
-#if 0
-		printf("%s:%d\n", __func__, __LINE__);
-#endif
-		D_DrawNonSubdiv(v->viewbuffer, v->zbuffer, acolormap, r,
+	else
+		D_DrawNonSubdiv(v->viewbuffer, v->zbuffer, acolormap,
 				v->zwidth, v->screenwidth, &d_xdenom, skinwidth, fm);
-	}
 }
 
