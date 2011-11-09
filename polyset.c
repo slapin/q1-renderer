@@ -1,18 +1,21 @@
 #include <stddef.h>
+#include <string.h>
 #include <math.h>
 #include "triangle.h"
 #include "polyset.h"
-typedef struct {
+
+struct edge {
+	int numedges;
+	int *v0;
+	int *v1;
+	int *v2;
+};
+
+struct edge_table {
 	int isflattop;
-	int numleftedges;
-	int *pleftedgevert0;
-	int *pleftedgevert1;
-	int *pleftedgevert2;
-	int numrightedges;
-	int *prightedgevert0;
-	int *prightedgevert1;
-	int *prightedgevert2;
-} edgetable;
+	struct edge el, er;
+};
+
 typedef struct {
 	void *pdest;
 	short *pz;
@@ -54,10 +57,48 @@ struct r_state {
 	int r_zistepx, r_zistepy;
 	spanpackage_t *d_pedgespanpackage;
 	spanpackage_t *a_spans;
-	edgetable *pedgetable;
+	struct edge_table *pedgetable;
+	struct edge_table edgetables[12];
+	int r_p0[6], r_p1[6], r_p2[6];
 };
 
-static int r_p0[6], r_p1[6], r_p2[6];
+static void set_edge(struct edge *e, int numedges, int *p1, int *p2, int *p3)
+{
+	e->numedges = numedges;
+	e->v0 = p1;
+	e->v1 = p2;
+	e->v2 = p3;
+}
+
+static void set_edge_table(struct edge_table *e, int isflattop, struct edge *el, struct edge *er)
+{
+	e->isflattop = isflattop;
+	memcpy(&e->el, el, sizeof(e->el));
+	memcpy(&e->er, er, sizeof(e->er));
+}
+#define SET_EDGE_TABLE(i, ft, nl, l1, l2, l3, nr, r1, r2, r3) \
+	do { \
+		struct edge el, er; \
+		set_edge(&el, nl , l1, l2, l3); \
+		set_edge(&er, nr , r1, r2, r3); \
+		set_edge_table(&r->edgetables[i], ft, &el, &er); \
+	} while (0)
+
+static void init_edge_table(struct r_state *r)
+{
+	SET_EDGE_TABLE(0, 0, 1, r->r_p0, r->r_p2, NULL, 2, r->r_p0, r->r_p1, r->r_p2); /* 0 */
+	SET_EDGE_TABLE(1, 0, 2, r->r_p1, r->r_p0, r->r_p2, 1, r->r_p1, r->r_p2, NULL); /* 1 */
+	SET_EDGE_TABLE(2, 1, 1, r->r_p0, r->r_p2, NULL, 1, r->r_p1, r->r_p2, NULL); /* 2 */
+	SET_EDGE_TABLE(3, 0, 1, r->r_p1, r->r_p0, NULL, 2, r->r_p1, r->r_p2, r->r_p0); /* 3 */
+	SET_EDGE_TABLE(4, 0, 2, r->r_p0, r->r_p2, r->r_p1, 1, r->r_p0, r->r_p1, NULL); /* 4 */
+	SET_EDGE_TABLE(5, 0, 1, r->r_p2, r->r_p1, NULL, 1, r->r_p2, r->r_p0, NULL); /* 5 */
+	SET_EDGE_TABLE(6, 0, 1, r->r_p2, r->r_p1, NULL, 2, r->r_p2, r->r_p0, r->r_p1); /* 6 */
+	SET_EDGE_TABLE(7, 0, 2, r->r_p2, r->r_p1, r->r_p0, 1, r->r_p2, r->r_p0, NULL); /* 7 */
+	SET_EDGE_TABLE(8, 0, 1, r->r_p1, r->r_p0, NULL, 1, r->r_p1, r->r_p2, NULL); /* 8 */
+	SET_EDGE_TABLE(9, 1, 1, r->r_p2, r->r_p1, NULL, 1, r->r_p0, r->r_p1, NULL); /* 9 */
+	SET_EDGE_TABLE(10, 1, 1, r->r_p1, r->r_p0, NULL, 1, r->r_p2, r->r_p0, NULL); /* 10 */
+	SET_EDGE_TABLE(11, 0, 1, r->r_p0, r->r_p2, NULL, 1, r->r_p0, r->r_p1, NULL); /* 11 */
+}
 
 #define PARANOID
 static void FloorDivMod(double numer, double denom, int *quotient, int *rem)
@@ -313,21 +354,6 @@ static const adivtab_t adivtab[32 * 32] = {
 };
 
 
-static edgetable edgetables[12] = {
-	{0, 1, r_p0, r_p2, NULL, 2, r_p0, r_p1, r_p2},
-	{0, 2, r_p1, r_p0, r_p2, 1, r_p1, r_p2, NULL},
-	{1, 1, r_p0, r_p2, NULL, 1, r_p1, r_p2, NULL},
-	{0, 1, r_p1, r_p0, NULL, 2, r_p1, r_p2, r_p0},
-	{0, 2, r_p0, r_p2, r_p1, 1, r_p0, r_p1, NULL},
-	{0, 1, r_p2, r_p1, NULL, 1, r_p2, r_p0, NULL},
-	{0, 1, r_p2, r_p1, NULL, 2, r_p2, r_p0, r_p1},
-	{0, 2, r_p2, r_p1, r_p0, 1, r_p2, r_p0, NULL},
-	{0, 1, r_p1, r_p0, NULL, 1, r_p1, r_p2, NULL},
-	{1, 1, r_p2, r_p1, NULL, 1, r_p0, r_p1, NULL},
-	{1, 1, r_p1, r_p0, NULL, 1, r_p2, r_p0, NULL},
-	{0, 1, r_p0, r_p2, NULL, 1, r_p0, r_p1, NULL},
-};
-
 static void D_PolysetDrawSpans8(spanpackage_t * pspanpackage,
 				unsigned char *d_viewbuffer, struct r_state *r,
 				unsigned char *acolormap, int skinwidth)
@@ -417,10 +443,10 @@ Referenced by D_RasterizeAliasPolySmooth().
 	float xstepdenominv, ystepdenominv, t0, t1;
 	float p01_minus_p21, p11_minus_p21, p00_minus_p20, p10_minus_p20;
 
-	p00_minus_p20 = r_p0[0] - r_p2[0];
-	p01_minus_p21 = r_p0[1] - r_p2[1];
-	p10_minus_p20 = r_p1[0] - r_p2[0];
-	p11_minus_p21 = r_p1[1] - r_p2[1];
+	p00_minus_p20 = r->r_p0[0] - r->r_p2[0];
+	p01_minus_p21 = r->r_p0[1] - r->r_p2[1];
+	p10_minus_p20 = r->r_p1[0] - r->r_p2[0];
+	p11_minus_p21 = r->r_p1[1] - r->r_p2[1];
 
 	xstepdenominv = 1.0 / (float)d_xdenom;
 
@@ -429,29 +455,29 @@ Referenced by D_RasterizeAliasPolySmooth().
 // ceil () for light so positive steps are exaggerated, negative steps
 // diminished,  pushing us away from underflow toward overflow. Underflow is
 // very visible, overflow is very unlikely, because of ambient lighting
-	t0 = r_p0[4] - r_p2[4];
-	t1 = r_p1[4] - r_p2[4];
+	t0 = r->r_p0[4] - r->r_p2[4];
+	t1 = r->r_p1[4] - r->r_p2[4];
 	r->r_lstepx = (int)
 	    ceil((t1 * p01_minus_p21 - t0 * p11_minus_p21) * xstepdenominv);
 	r->r_lstepy = (int)
 	    ceil((t1 * p00_minus_p20 - t0 * p10_minus_p20) * ystepdenominv);
 
-	t0 = r_p0[2] - r_p2[2];
-	t1 = r_p1[2] - r_p2[2];
+	t0 = r->r_p0[2] - r->r_p2[2];
+	t1 = r->r_p1[2] - r->r_p2[2];
 	r->r_sstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			    xstepdenominv);
 	r->r_sstepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
 			    ystepdenominv);
 
-	t0 = r_p0[3] - r_p2[3];
-	t1 = r_p1[3] - r_p2[3];
+	t0 = r->r_p0[3] - r->r_p2[3];
+	t1 = r->r_p1[3] - r->r_p2[3];
 	r->r_tstepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			    xstepdenominv);
 	r->r_tstepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
 			    ystepdenominv);
 
-	t0 = r_p0[5] - r_p2[5];
-	t1 = r_p1[5] - r_p2[5];
+	t0 = r->r_p0[5] - r->r_p2[5];
+	t1 = r->r_p1[5] - r->r_p2[5];
 	r->r_zistepx = (int)((t1 * p01_minus_p21 - t0 * p11_minus_p21) *
 			     xstepdenominv);
 	r->r_zistepy = (int)((t1 * p00_minus_p20 - t0 * p10_minus_p20) *
@@ -480,6 +506,7 @@ Referenced by D_DrawNonSubdiv().
 */
 {
 	int edgetableindex;
+	init_edge_table(r);
 
 	edgetableindex = 0;	// assume the vertices are already in
 	//  top to bottom order
@@ -488,12 +515,12 @@ Referenced by D_DrawNonSubdiv().
 // determine which edges are right & left, and the order in which
 // to rasterize them
 //
-	if (r_p0[1] >= r_p1[1]) {
-		if (r_p0[1] == r_p1[1]) {
-			if (r_p0[1] < r_p2[1])
-				r->pedgetable = &edgetables[2];
+	if (r->r_p0[1] >= r->r_p1[1]) {
+		if (r->r_p0[1] == r->r_p1[1]) {
+			if (r->r_p0[1] < r->r_p2[1])
+				r->pedgetable = &r->edgetables[2];
 			else
-				r->pedgetable = &edgetables[5];
+				r->pedgetable = &r->edgetables[5];
 
 			return;
 		} else {
@@ -501,29 +528,29 @@ Referenced by D_DrawNonSubdiv().
 		}
 	}
 
-	if (r_p0[1] == r_p2[1]) {
+	if (r->r_p0[1] == r->r_p2[1]) {
 		if (edgetableindex)
-			r->pedgetable = &edgetables[8];
+			r->pedgetable = &r->edgetables[8];
 		else
-			r->pedgetable = &edgetables[9];
+			r->pedgetable = &r->edgetables[9];
 
 		return;
-	} else if (r_p1[1] == r_p2[1]) {
+	} else if (r->r_p1[1] == r->r_p2[1]) {
 		if (edgetableindex)
-			r->pedgetable = &edgetables[10];
+			r->pedgetable = &r->edgetables[10];
 		else
-			r->pedgetable = &edgetables[11];
+			r->pedgetable = &r->edgetables[11];
 
 		return;
 	}
 
-	if (r_p0[1] > r_p2[1])
+	if (r->r_p0[1] > r->r_p2[1])
 		edgetableindex += 2;
 
-	if (r_p1[1] > r_p2[1])
+	if (r->r_p1[1] > r->r_p2[1])
 		edgetableindex += 4;
 
-	r->pedgetable = &edgetables[edgetableindex];
+	r->pedgetable = &r->edgetables[edgetableindex];
 }
 
 static void D_PolysetScanLeftEdge(int height, unsigned char *d_pdest, unsigned char *d_ptex,
@@ -653,11 +680,11 @@ Referenced by D_DrawNonSubdiv().
 	int d_ptexbasestep;
 	int d_ptexextrastep;
 
-	plefttop = r->pedgetable->pleftedgevert0;
-	prighttop = r->pedgetable->prightedgevert0;
+	plefttop = r->pedgetable->el.v0;
+	prighttop = r->pedgetable->er.v0;
 
-	pleftbottom = r->pedgetable->pleftedgevert1;
-	prightbottom = r->pedgetable->prightedgevert1;
+	pleftbottom = r->pedgetable->el.v1;
+	prightbottom = r->pedgetable->er.v1;
 
 	initialleftheight = pleftbottom[1] - plefttop[1];
 	initialrightheight = prightbottom[1] - prighttop[1];
@@ -759,11 +786,11 @@ Referenced by D_DrawNonSubdiv().
 //
 // scan out the bottom part of the left edge, if it exists
 //
-	if (r->pedgetable->numleftedges == 2) {
+	if (r->pedgetable->el.numedges == 2) {
 		int height;
 
 		plefttop = pleftbottom;
-		pleftbottom = r->pedgetable->pleftedgevert2;
+		pleftbottom = r->pedgetable->el.v2;
 
 		D_PolysetSetUpForLineScan(plefttop[0], plefttop[1],
 					  pleftbottom[0], pleftbottom[1], r);
@@ -861,7 +888,7 @@ Referenced by D_DrawNonSubdiv().
 	printf("%s:%d\n", __func__, __LINE__);
 #endif
 // scan out the bottom part of the right edge, if it exists
-	if (r->pedgetable->numrightedges == 2) {
+	if (r->pedgetable->er.numedges == 2) {
 		int height;
 		spanpackage_t *pstart;
 
@@ -871,7 +898,7 @@ Referenced by D_DrawNonSubdiv().
 		r->d_aspancount = prightbottom[0] - prighttop[0];
 
 		prighttop = prightbottom;
-		prightbottom = r->pedgetable->prightedgevert2;
+		prightbottom = r->pedgetable->er.v2;
 
 		height = prightbottom[1] - prighttop[1];
 
@@ -934,34 +961,34 @@ Referenced by D_PolysetDraw().
 			continue;
 		}
 
-		r_p0[0] = index0->v[0];	// u
-		r_p0[1] = index0->v[1];	// v
-		r_p0[2] = index0->v[2];	// s
-		r_p0[3] = index0->v[3];	// t
-		r_p0[4] = index0->v[4];	// light
-		r_p0[5] = index0->v[5];	// iz
+		r.r_p0[0] = index0->v[0];	// u
+		r.r_p0[1] = index0->v[1];	// v
+		r.r_p0[2] = index0->v[2];	// s
+		r.r_p0[3] = index0->v[3];	// t
+		r.r_p0[4] = index0->v[4];	// light
+		r.r_p0[5] = index0->v[5];	// iz
 
-		r_p1[0] = index1->v[0];
-		r_p1[1] = index1->v[1];
-		r_p1[2] = index1->v[2];
-		r_p1[3] = index1->v[3];
-		r_p1[4] = index1->v[4];
-		r_p1[5] = index1->v[5];
+		r.r_p1[0] = index1->v[0];
+		r.r_p1[1] = index1->v[1];
+		r.r_p1[2] = index1->v[2];
+		r.r_p1[3] = index1->v[3];
+		r.r_p1[4] = index1->v[4];
+		r.r_p1[5] = index1->v[5];
 
-		r_p2[0] = index2->v[0];
-		r_p2[1] = index2->v[1];
-		r_p2[2] = index2->v[2];
-		r_p2[3] = index2->v[3];
-		r_p2[4] = index2->v[4];
-		r_p2[5] = index2->v[5];
+		r.r_p2[0] = index2->v[0];
+		r.r_p2[1] = index2->v[1];
+		r.r_p2[2] = index2->v[2];
+		r.r_p2[3] = index2->v[3];
+		r.r_p2[4] = index2->v[4];
+		r.r_p2[5] = index2->v[5];
 
 		if (!ptri->facesfront) {
 			if (index0->flags & ALIAS_ONSEAM)
-				r_p0[2] += fm->seamfixupX16;
+				r.r_p0[2] += fm->seamfixupX16;
 			if (index1->flags & ALIAS_ONSEAM)
-				r_p1[2] += fm->seamfixupX16;
+				r.r_p1[2] += fm->seamfixupX16;
 			if (index2->flags & ALIAS_ONSEAM)
-				r_p2[2] += fm->seamfixupX16;
+				r.r_p2[2] += fm->seamfixupX16;
 		}
 
 		D_PolysetSetEdgeTable(&r);
